@@ -9,4 +9,5 @@ export default () => ({
   },
   backupDir: process.env.PBG_BACKUP_DIR ?? '/app/backups',
   cacheDir: process.env.PBG_CACHE_DIR ?? './cache',
+  redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
 });

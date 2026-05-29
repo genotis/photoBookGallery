@@ -8,19 +8,22 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { LibraryRoot } from '@prisma/client';
 import { stat } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
 import { IndexerService } from './indexer.service';
-import { CreateRootDto } from './dto/create-root.dto';
+import { CreateRootDto, PatchRootDto } from './dto/create-root.dto';
+import { SchedulerService } from './scheduler.service';
 
 @Controller('roots')
 export class LibraryController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly indexer: IndexerService,
+    private readonly scheduler: SchedulerService,
   ) {}
 
   @Get()
@@ -42,13 +45,45 @@ export class LibraryController {
     if (!st.isDirectory()) {
       throw new BadRequestException('디렉터리 경로가 아닙니다.');
     }
-    return this.prisma.libraryRoot.create({
+    if (dto.scanCron && !SchedulerService.isValid(dto.scanCron)) {
+      throw new BadRequestException(`잘못된 cron 식: ${dto.scanCron}`);
+    }
+    const root = await this.prisma.libraryRoot.create({
       data: {
         path: dto.path,
         label: dto.label ?? null,
         readOnly: dto.readOnly ?? false,
+        scanCron: dto.scanCron ?? null,
       },
     });
+    await this.scheduler.reload();
+    return root;
+  }
+
+  @Patch(':id')
+  async patch(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PatchRootDto,
+  ): Promise<LibraryRoot> {
+    const root = await this.prisma.libraryRoot.findUnique({ where: { id } });
+    if (!root) throw new NotFoundException('루트를 찾을 수 없습니다.');
+    if (
+      dto.scanCron !== undefined &&
+      dto.scanCron !== null &&
+      !SchedulerService.isValid(dto.scanCron)
+    ) {
+      throw new BadRequestException(`잘못된 cron 식: ${dto.scanCron}`);
+    }
+    const data: Record<string, unknown> = {};
+    if (dto.label !== undefined) data.label = dto.label;
+    if (dto.readOnly !== undefined) data.readOnly = dto.readOnly;
+    if (dto.scanCron !== undefined) data.scanCron = dto.scanCron;
+    const updated = await this.prisma.libraryRoot.update({
+      where: { id },
+      data,
+    });
+    if ('scanCron' in data) await this.scheduler.reload();
+    return updated;
   }
 
   @Delete(':id')
@@ -63,6 +98,7 @@ export class LibraryController {
     // 아카이브 레코드도 함께 제거 (원본 파일은 건드리지 않음)
     await this.prisma.archive.deleteMany({ where: { rootId: id } });
     await this.prisma.libraryRoot.delete({ where: { id } });
+    await this.scheduler.reload();
     return { ok: true };
   }
 

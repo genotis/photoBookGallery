@@ -1,31 +1,56 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Job as BullJob } from 'bullmq';
 import { readdir, stat } from 'fs/promises';
 import { basename, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import { dbJobIdFrom, QueueService } from '../queue/queue.service';
 import { ArchiveService } from '../archive/archive.service';
 import { JobsService } from '../jobs/jobs.service';
+import { SearchIndexService } from '../search/search-index.service';
 import { detectArchiveFormat } from '../common/file.util';
 import { hashFile } from '../common/hash.util';
 
+interface IndexPayload {
+  rootId: number;
+}
+
+const QUEUE = 'index';
+
 @Injectable()
-export class IndexerService {
+export class IndexerService implements OnModuleInit {
   private readonly logger = new Logger(IndexerService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly archive: ArchiveService,
     private readonly jobs: JobsService,
+    private readonly searchIndex: SearchIndexService,
+    private readonly queue: QueueService,
   ) {}
 
-  /** 백그라운드 인덱싱 작업을 시작하고 즉시 jobId 를 돌려준다. */
+  onModuleInit(): void {
+    this.queue.registerWorker<IndexPayload>(QUEUE, (job) =>
+      this.process(job),
+    );
+  }
+
+  /** DB Job 을 만들고 큐에 enqueue. 즉시 jobId 반환. */
   async startScan(rootId: number): Promise<number> {
     const job = await this.jobs.create('index', { rootId });
-    // fire-and-forget — 요청을 막지 않음
-    void this.runScan(job.id, rootId).catch((err) => {
-      this.logger.error(`인덱싱 실패 (job ${job.id})`, err as Error);
-      void this.jobs.fail(job.id, err);
-    });
+    await this.queue.enqueue<IndexPayload>(QUEUE, job.id, { rootId });
     return job.id;
+  }
+
+  private async process(bullJob: BullJob<IndexPayload>): Promise<void> {
+    const jobId = dbJobIdFrom(bullJob.id);
+    const { rootId } = bullJob.data;
+    try {
+      await this.runScan(jobId, rootId);
+    } catch (err) {
+      this.logger.error(`인덱싱 실패 (job ${jobId})`, err as Error);
+      await this.jobs.fail(jobId, err);
+      throw err;
+    }
   }
 
   private async runScan(jobId: number, rootId: number): Promise<void> {
@@ -147,6 +172,7 @@ export class IndexerService {
         sizeBytes: BigInt(e.size),
       })),
     );
+    await this.searchIndex.reindex(archiveId);
   }
 
   private async replaceEntries(

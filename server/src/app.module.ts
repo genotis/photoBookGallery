@@ -6,6 +6,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { join } from 'path';
 import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
+import { QueueModule } from './queue/queue.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthGuard } from './auth/auth.guard';
 import { HealthModule } from './health/health.module';
@@ -14,6 +15,16 @@ import { JobsModule } from './jobs/jobs.module';
 import { LibraryModule } from './library/library.module';
 import { ImagesModule } from './images/images.module';
 import { ArchivesModule } from './archives/archives.module';
+import { CountriesModule } from './countries/countries.module';
+import { PublishersModule } from './publishers/publishers.module';
+import { SeriesModule } from './series/series.module';
+import { TagsModule } from './tags/tags.module';
+import { ModelsModule } from './models/models.module';
+import { SearchModule } from './search/search.module';
+import { TreeModule } from './tree/tree.module';
+import { RepackModule } from './repack/repack.module';
+import { AutoTagModule } from './auto-tag/auto-tag.module';
+import { DuplicatesModule } from './duplicates/duplicates.module';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -39,6 +50,7 @@ const isProd = process.env.NODE_ENV === 'production';
         ]
       : []),
     PrismaModule,
+    QueueModule,
     AuthModule,
     HealthModule,
     ArchiveModule,
@@ -46,6 +58,16 @@ const isProd = process.env.NODE_ENV === 'production';
     LibraryModule,
     ImagesModule,
     ArchivesModule,
+    CountriesModule,
+    PublishersModule,
+    SeriesModule,
+    TagsModule,
+    ModelsModule,
+    SearchModule,
+    TreeModule,
+    RepackModule,
+    AutoTagModule,
+    DuplicatesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })

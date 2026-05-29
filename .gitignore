@@ -17,6 +17,7 @@ build/
 data/
 cache/
 backups/
+dev-data/
 *.db
 *.sqlite
 *.sqlite3

@@ -12,4 +12,22 @@ export class CreateRootDto {
   @IsOptional()
   @IsBoolean()
   readOnly?: boolean;
+
+  @IsOptional()
+  @IsString()
+  scanCron?: string;
+}
+
+export class PatchRootDto {
+  @IsOptional()
+  @IsString()
+  label?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  readOnly?: boolean;
+
+  @IsOptional()
+  @IsString()
+  scanCron?: string | null;
 }

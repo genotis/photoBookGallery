@@ -3,14 +3,20 @@
 기본 prefix: `/api`. 인증 필요(세션 쿠키). 이미지 스트림 엔드포인트는 HTTP 캐시
 헤더(`ETag`, `Cache-Control`) 사용.
 
-> **구현 현황 (단계 1 완료)**
-> - ✅ 구현됨: 인증(login/logout/me), 헬스(`/api/health`), 루트(`GET/POST/DELETE /api/roots`,
+> **구현 현황 (단계 3 진행)**
+> - ✅ 단계 1: 인증(login/logout/me), 헬스(`/api/health`), 루트(`GET/POST/DELETE /api/roots`,
 >   `POST /api/roots/:id/scan`), 아카이브(`GET /api/archives`, `:id`, `:id/entries`),
 >   이미지(`:id/cover.webp`, `:id/page/:index`), 작업(`GET /api/jobs`, `:id`).
-> - ⏳ 설계만(단계 2+): 아카이브 메타 수정(PATCH)/일괄편집, 모델·출판사·국가·시리즈·태그
->   CRUD, 모델 병합, 통합 검색/패싯, 재압축(repack), SSE 스트림, 폴더 트리(`/api/tree`).
-> - 단계 1 목록 API의 필터는 현재 `q/format/favorite/sort/order/page/limit/includeMissing`만
->   동작. `model/publisher/country/tag` 필터는 단계 2에서 추가.
+> - ✅ 단계 2: 아카이브 메타 수정(`PATCH /api/archives/:id`)·일괄편집(`POST /api/archives/batch`),
+>   분류 엔티티 CRUD(`/api/countries`, `/api/publishers`, `/api/series`, `/api/tags`, `/api/models`),
+>   모델 병합(`POST /api/models/:id/merge`), 통합 검색(`/api/search`),
+>   패싯(`/api/facets`), 폴더 트리(`/api/tree`). 목록 API 필터에
+>   `country/publisher/series/model/tag/ratingMin` 추가.
+> - ✅ 단계 3: 재압축(`POST /api/archives/:id/repack`, `GET /api/archives/:id/repack/:jobId`)
+>   — 임시→검증→백업→원자 교체, 표본 디코드 무결성 검증, archiveId 단위 락.
+> - ✅ 단계 4(부분): SSE 스트림(`GET /api/jobs/stream`, 필터 `?ids=`), 루트 메타 편집(`PATCH /api/roots/:id`)
+>   포함 cron 식 `scanCron` 자동 스캔, 썸네일 캐시 LRU GC(주기적 자동 실행).
+> - ⏳ 잔여: 중복 탐지 API, BullMQ/Redis·Postgres·7z·다중 사용자(선택 항목).
 
 ## 1. 인증
 | 메서드 | 경로 | 설명 |
@@ -23,7 +29,8 @@
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | GET  | `/api/roots` | 등록된 스캔 루트 목록 |
-| POST | `/api/roots` | 루트 추가 `{ path, label, readOnly }` |
+| POST | `/api/roots` | 루트 추가 `{ path, label, readOnly, scanCron }` |
+| PATCH | `/api/roots/:id` | 루트 메타 수정 `{ label, readOnly, scanCron }` (cron 식은 5필드, null 로 자동 스캔 해제) |
 | DELETE | `/api/roots/:id` | 루트 제거 |
 | POST | `/api/roots/:id/scan` | 인덱싱 Job 생성 (전체/증분) |
 | GET  | `/api/tree?path=` | 폴더 트리 탐색(브라우징용) |
@@ -36,6 +43,12 @@
 | PATCH | `/api/archives/:id` | 메타 수정 `{ countryId, publisherId, seriesId, modelIds[], tagIds[], rating, favorite, note, publishedAt, coverEntry }` |
 | POST | `/api/archives/batch` | 일괄 편집 `{ ids[], set:{...}, addTags[], removeTags[] }` |
 | GET | `/api/archives/:id/entries` | 정렬된 엔트리(페이지) 목록 |
+| GET | `/api/archives/:id/suggestions` | 파일명 휴리스틱 파서 결과 (국가/출판사/모델 후보, 기존 엔티티 매칭) |
+| POST | `/api/auto-tag/preview` | 일괄 추정 미리보기 `{ onlyMissing?, sampleLimit? }` — 카운트 + 샘플 |
+| POST | `/api/auto-tag/apply` | 일괄 적용 Job 생성 `{ ids?, onlyMissing? }` — 새 모델/출판사/국가 자동 생성, 비어있는 필드만 채움. 결과 통계는 Job `payload.stats` 에 기록 |
+| POST | `/api/duplicates/scan` | 모든 LibraryRoot 하위 파일을 해시별로 그룹화. 캐시된 contentHash 재사용. Job 으로 진행. |
+| GET | `/api/duplicates/latest` | 최근 완료된 중복 스캔 결과 (없으면 `null`) |
+| POST | `/api/search/rebuild` | FTS5 인덱스 전체 재구축. 일반적으로 부팅 시 인덱스가 비어있으면 자동 빌드. |
 
 ### 목록 응답 예
 ```json
@@ -84,15 +97,21 @@
 ## 7. 검색 / 패싯
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| GET | `/api/search?q=` | 통합 검색(파일명/메모/모델/태그) |
-| GET | `/api/facets?...` | 현재 필터 기준 패싯 카운트(모델/출판사/국가/태그) |
+| GET | `/api/search?q=` | 통합 검색 — fileName/title/note 는 FTS5(트리그램), model/alias/tag 는 LIKE. 3자 미만 토큰은 LIKE 폴백. |
+| GET | `/api/facets?...` | 현재 필터 기준 패싯 카운트(모델/출판사/국가/태그). q 필터도 동일 FTS5 경로. |
+| POST | `/api/search/rebuild` | FTS5 인덱스 전체 재구축. |
+
+`/api/archives?q=` 도 동일 FTS5 경로로 처리. ArchiveFts 가상 테이블은
+`Archive` 의 fileName/title/note 만 인덱싱하며 동기화는 어플리케이션 레이어
+(SearchIndexService.reindex)에서 수행한다. 부팅 시 인덱스가 비어있고
+Archive 가 존재하면 자동으로 재구축한다.
 
 ## 8. 작업(Jobs)
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | GET | `/api/jobs` | 작업 목록/상태 |
 | GET | `/api/jobs/:id` | 단일 작업 상태 |
-| GET | `/api/jobs/stream` | (선택) SSE로 진행상황 푸시 |
+| GET | `/api/jobs/stream` | SSE 스트림. `?ids=1,2` 로 필터. 접속 직후 스냅샷 push, 이후 변경 시마다 push, 15초 heartbeat. |
 
 ## 9. 공통 규약
 - 에러: `{ statusCode, message, error }` (Nest 기본 + 필터).

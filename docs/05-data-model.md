@@ -50,6 +50,7 @@ model Archive {
   contentHash  String    @unique        // 식별 기준(BLAKE3/xxHash64 전체 해시)
   pageCount    Int       @default(0)
   coverEntry   String?                  // 표지로 쓸 엔트리 이름
+  title        String?                  // 사진집 제목 (파일명과 별개, 파서/사용자가 채움)
   // 분류
   countryId    Int?
   country      Country?  @relation(fields: [countryId], references: [id])

@@ -8,7 +8,10 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Alpine(musl) + OpenSSL 3 환경에 맞는 query engine 추가.
+  // "native" 는 로컬 개발(mac/glibc) 용.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 model LibraryRoot {
@@ -16,6 +19,7 @@ model LibraryRoot {
   path      String    @unique // NAS 절대경로 (컨테이너 기준)
   label     String?
   readOnly  Boolean   @default(false) // 편집 허용 여부
+  scanCron  String? // 자동 스캔 cron 식 (예: "0 3 * * *"). null 이면 수동.
   archives  Archive[]
   createdAt DateTime  @default(now())
 }
@@ -32,6 +36,7 @@ model Archive {
   contentHash String       @unique // 식별 기준 (BLAKE3/xxHash64 전체 해시)
   pageCount   Int          @default(0)
   coverEntry  String? // 표지로 쓸 엔트리 이름
+  title       String? // 사진집 제목 (파일명과 별개, 파서/사용자가 채움)
 
   // 분류
   countryId   Int?

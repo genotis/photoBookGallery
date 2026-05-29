@@ -21,20 +21,48 @@ cp .env.example server/.env       # PBG_AUTH_PASSWORD 등 수정
 # 3) DB 마이그레이션 + Prisma client 생성
 npm run db:migrate -w server      # 최초 1회 (이후 prisma 변경 시)
 
-# 4) 개발 서버 (api: :3000, web: :5173 — /api는 자동 프록시)
+# 4) Redis 기동 (BullMQ 큐 백엔드, 백그라운드 작업에 필수)
+docker run -d -p 6379:6379 --name pbg-redis redis:7-alpine
+
+# 5) (선택) 로컬 테스트용 더미 사진집 생성
+npm run seed:dummy
+#   → dev-data/photobooks/ 아래에 .cbz 5권을 만든다.
+#   → 앱 헤더 > 설정에서 이 경로를 라이브러리 루트로 등록.
+
+# 6) 개발 서버 (api: :3000, web: :5173 — /api는 자동 프록시)
 npm run dev
 ```
 
 - 백엔드: NestJS — `server/` (헬스체크 `GET /api/health`, 인증 `POST /api/auth/login`)
 - 프론트엔드: React+Vite — `web/` (헬스 상태 + 로그인 UI)
 
-## 배포 (Synology Docker)
+## 배포 (Synology Container Manager)
+
+이미지를 로컬에서 빌드해 NAS 로 옮기는 흐름을 권장 (Docker Hub 등록 불요):
 
 ```bash
-docker compose up -d --build         # docker-compose.yml 의 볼륨 경로를 NAS에 맞게 수정
+# 1) 로컬에서 이미지 빌드 (현재 머신 아키텍처. NAS 가 ARM 이면 --platform 지정)
+docker build -t photobookgallery:latest .
+
+# 2) tar 로 묶어 NAS 로 전송
+docker save photobookgallery:latest | gzip > pbg.tar.gz
+scp pbg.tar.gz admin@<nas>:/volume1/docker/pbg/
+
+# 3) NAS 에서 이미지 import (SSH)
+ssh admin@<nas> sudo docker load -i /volume1/docker/pbg/pbg.tar.gz
+
+# 4) Synology Container Manager > 프로젝트 > 생성
+#    docker-compose.yml 를 붙여넣고 시작
 ```
 
-자세한 내용은 [docs/07-deployment.md](docs/07-deployment.md).
+전체 흐름(폴더 준비, PUID/PGID 확인, 리버스 프록시, 백업, 트러블슈팅) →
+[docs/07-deployment.md](docs/07-deployment.md).
+
+> Multi-arch (amd64/arm64) 빌드:
+> ```bash
+> docker buildx build --platform linux/amd64,linux/arm64 \
+>   -t photobookgallery:latest --load .
+> ```
 
 ## 문서
 

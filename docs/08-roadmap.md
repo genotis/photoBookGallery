@@ -25,29 +25,42 @@
 ※ 식별은 BLAKE3 콘텐츠 해시 기반(이동/리네임 추적), 증분 스캔(size+mtime 스킵) 검증 완료.
 
 ## 단계 2 — 정리(Organize) / 메타데이터
-- [ ] Model/Publisher/Country/Series/Tag 엔티티 + CRUD.
-- [ ] 아카이브 메타 편집 UI(모델 다대다, 태그, 평점, 즐겨찾기, 메모).
-- [ ] 패싯 필터 + 분류축별 탐색(모델/출판사 중심 화면).
-- [ ] 파일명 휴리스틱 파서(추정→확정 워크플로) + 일괄 태깅.
-- [ ] 모델 병합(중복 정리), 별칭 관리.
-- [ ] 전문검색(FTS5).
+- [x] Model/Publisher/Country/Series/Tag 엔티티 + CRUD.
+- [x] 아카이브 메타 편집 UI(모델 다대다, 태그, 평점, 즐겨찾기, 메모).
+- [x] 패싯 필터 + 분류축별 탐색(모델/출판사/국가/시리즈/태그). 사이드바에서 토글.
+- [x] 모델 병합(중복 정리, 별칭 자동 승계).
+- [x] 통합 검색(`/api/search`) — 파일명/메모/모델명/별칭/태그 LIKE 매칭.
+- [x] 일괄 편집(`POST /api/archives/batch`) — set/addTags/removeTags/addModels/removeModels.
+- [x] 폴더 트리(`/api/tree`) — 루트 화이트리스트 내 폴더별 아카이브 카운트.
+- [x] 파일명 휴리스틱 파서(추정→확정 워크플로) — `GET /api/archives/:id/suggestions`. 메타 패널 "파일명에서 추정" 버튼. 선두 숫자 ID/2-3자 ISO 국가코드/모델 후 CJK 별칭 패턴 인식.
+- [x] 일괄 태깅 — `POST /api/auto-tag/preview` + `POST /api/auto-tag/apply` (Job). 설정 드로어 "자동 태깅" 섹션, 미리보기 + 적용. 메타 비어있는 항목만 / 전체 토글. 새 엔티티 자동 생성, 기존 채워진 필드는 보존.
+- [x] 전문검색(FTS5) — `ArchiveFts` 가상 테이블 + 트리그램 토크나이저. 3자 미만 토큰은 LIKE 폴백. 부팅 시 자동 빌드 + `POST /api/search/rebuild`. 동기화는 indexer/patch/auto-tag/repack 시점에서 호출.
 
 ## 단계 3 — 편집(삭제 + 재압축) ⚠ 위험 기능
-- [ ] 뷰어에서 페이지 선택/삭제 UI.
-- [ ] Repacker Job: ZIP→ZIP 재패키징(임시→검증→원자적 교체).
-- [ ] RAR/CBR→CBZ 변환 경로.
-- [ ] 저장 정책(원본보존/교체/휴지통) + 파일 락 + 감사 로그.
-- [ ] 무결성 검증(엔트리 수/디코드 테스트), 실패 시 롤백.
+- [x] 뷰어에서 페이지 선택/삭제 UI (선택 모드 + 단일/연속 보기 모두 지원).
+- [x] Repacker Job: ZIP→ZIP 재패키징 (`archiver` STORE, 임시→검증→원자 rename).
+- [x] RAR/CBR→CBZ 변환 경로 (RarReader 로 추출 후 ZipWriter 로 패키징, 활성 위치 확장자 `.cbz` 로 교체).
+- [x] 저장 정책: 원본 백업(`<backupRoot>/<상대경로>.<timestamp>.<ext>`) 후 활성 위치 교체.
+- [x] 파일 락 — `RepackLock` 으로 archiveId 단위 직렬화.
+- [x] 무결성 검증 — 엔트리 수 일치 + 마지막 페이지 `sharp().metadata()` 디코드 검증, 실패 시 원본 미변경.
+- [ ] 감사 로그 영구화 — 현재 pino 로그만. 별도 테이블/리포트는 후속.
 
-**완료 기준**: 임의 아카이브에서 페이지 삭제 → 안전하게 재압축, 원본 무손실.
+**완료 기준**: 임의 아카이브에서 페이지 삭제 → 안전하게 재압축, 원본 무손실. ✅ (감사 로그 영구화 제외)
 
 ## 단계 4 — 강화 / 운영 품질
-- [ ] 중복 탐지(해시), 이동/리네임 추적.
-- [ ] 스캔 스케줄링, 캐시 용량 관리(LRU).
-- [ ] SSE 작업 진행 표시, 대량작업 UX.
-- [ ] 반응형/모바일 제스처 최적화.
-- [ ] (선택) BullMQ+Redis, PostgreSQL 승격, 7z 지원.
+- [x] 이동/리네임 추적 (단계 1 인덱서에서 `contentHash` 기반 자동 처리, 검증 완료).
+- [x] 중복 탐지(해시) — `POST /api/duplicates/scan` + `GET /api/duplicates/latest`. 모든 LibraryRoot 하위를 walk, path+size+mtime 기준 캐시 해시 재사용, 동일 해시 그룹 반환. 설정 드로어에서 트리거.
+- [x] 스캔 스케줄링 — `LibraryRoot.scanCron` 필드 + `node-cron` `SchedulerService` (생성/수정/삭제 시 자동 reload).
+- [x] 캐시 용량 관리(LRU) — `CacheGcService` 주기 실행, `PBG_CACHE_MAX_MB` 기본 2048MB, atime 오름차순으로 eviction.
+- [x] SSE 작업 진행 표시 — `GET /api/jobs/stream` 단일 채널 + 클라이언트 `useJobStream` 훅. 스캔/재압축 모두 SSE 사용, 실패 시 폴링 폴백.
+- [x] 반응형/모바일 제스처 — 헤더 토글 가능한 패싯 사이드바, 모바일 가로 폭에서 스택 레이아웃, 뷰어 좌우 스와이프(50px+) 네비게이션.
+- [x] BullMQ + Redis — 모든 백그라운드 작업(인덱싱·재압축·자동 태깅·중복 탐지)을 큐로 직렬화. `pbg-{id}` 매핑으로 DB Job 과 1:1. 부팅 시 `JobReconciler` 가 고아 작업을 자동 마감. docker-compose 에 redis 서비스 포함.
+- [ ] (선택) 7z 지원.
 - [ ] (선택) 다중 사용자/권한.
+
+> **PostgreSQL 승격 — 보류**. 단일 사용자 + 수천~수만 아카이브 규모에선 SQLite + FTS5
+> 로 충분하고, 큐는 이미 Redis 로 분리. 다음 조건이 동시에 발생할 때만 재검토:
+> 아카이브가 수십만 건 + 패싯/검색 지연, 다중 서비스 DB 접근, 다중 사용자.
 
 ## 리스크 & 선제 대응
 | 리스크 | 대응 |

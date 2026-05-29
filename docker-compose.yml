@@ -1,5 +1,13 @@
+# Synology Container Manager 의 "프로젝트" 기능에서 그대로 사용 가능.
+# 시놀로지 경로(/volume1/...)는 환경에 맞게 수정.
+# DSM 사용자 UID/GID (admin 기본: 1026/100) 를 PUID/PGID 로 지정해야
+# 컨테이너가 NAS 파일을 읽고/편집할 수 있다.
+
 services:
   pbg:
+    # 사전 빌드한 이미지를 사용한다면 image: 만 남기고 build: 제거.
+    # 로컬 빌드 시:
+    #   docker compose build (또는 Container Manager > 프로젝트 > 빌드)
     build: .
     image: photobookgallery:latest
     container_name: photobookgallery
@@ -9,17 +17,34 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/pbg.db
       - PBG_AUTH_PASSWORD=${PBG_AUTH_PASSWORD:-change_me}
-      - PBG_SESSION_SECRET=${PBG_SESSION_SECRET:-please_change_this}
+      - PBG_SESSION_SECRET=${PBG_SESSION_SECRET:-please_change_this_to_a_long_random_string}
       - PBG_BACKUP_DIR=/app/backups
       - PBG_CACHE_DIR=/app/cache
-      - TZ=Asia/Seoul
+      - PBG_CACHE_MAX_MB=${PBG_CACHE_MAX_MB:-2048}
+      - REDIS_URL=redis://redis:6379
+      # DSM 사용자/그룹 — `id <username>` 로 확인. admin: 1026/100, 임의 사용자: 다름.
+      - PUID=${PUID:-1026}
+      - PGID=${PGID:-100}
+      - TZ=${TZ:-Asia/Seoul}
     volumes:
-      # NAS 미디어 (편집 위해 RW). 실제 경로로 교체.
-      - /volume1/photobooks:/media/photobooks
-      # 편집 시 원본 백업 보관
+      # NAS 미디어 — 편집(재압축) 위해 RW. 실제 경로로 교체.
+      - /volume4/media:/media
+      # 편집 시 원본 백업 보관 (원본 무손실 정책 — docs/04 참조)
       - /volume1/docker/pbg/backups:/app/backups
-      # SQLite DB (백업 대상)
+      # SQLite DB — 백업 대상
       - /volume1/docker/pbg/data:/app/data
-      # 썸네일 캐시 (재생성 가능)
+      # 썸네일 캐시 — 재생성 가능, 백업 불요
       - /volume1/docker/pbg/cache:/app/cache
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pbg-redis
+    # 작업 큐(BullMQ) 백엔드.
+    # AOF 활성화로 컨테이너 재시작 시 진행 중 작업 큐 보존.
+    command: ["redis-server", "--appendonly", "yes", "--save", ""]
+    volumes:
+      - /volume1/docker/pbg/redis:/data
     restart: unless-stopped

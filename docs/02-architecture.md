@@ -1,5 +1,11 @@
 # 02. 시스템 아키텍처
 
+> **작업 큐** — 모든 백그라운드 작업은 BullMQ + Redis 큐를 거친다.
+> DB `Job` 테이블은 UI/SSE 의 단일 진실 원천이고, 큐는 영속화 + stalled 복구 +
+> 동시성 제어를 담당. BullMQ jobId 는 `pbg-{Job.id}` 형식으로 DB 와 1:1 매핑되며
+> 중복 enqueue 도 차단된다. 부팅 시 `JobReconcilerService` 가 고아 Job 을
+> `failed` 로 마감한다. Redis 는 docker-compose 의 동거 서비스.
+
 ## 1. 설계 원칙
 
 1. **파일이 단일 진실 원천(Source of Truth).** NAS의 압축파일이 원본 데이터.
