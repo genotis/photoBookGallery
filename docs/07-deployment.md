@@ -8,7 +8,7 @@ DB는 SQLite 파일 한 개. 큐는 Redis 가 백엔드.
 ```
 [Synology Container Manager > 프로젝트]
   photobookgallery (앱 컨테이너)
-    ├─ NestJS API (port 3000)  ─── DSM 리버스 프록시 권장
+    ├─ NestJS API (컨테이너 3000 → 호스트 8021) ─── DSM 리버스 프록시 권장
     ├─ SQLite + FTS5 (/app/data)
     └─ 썸네일 캐시 (/app/cache)
 
@@ -88,7 +88,7 @@ services:
     image: photobookgallery:latest
     container_name: photobookgallery
     ports:
-      - "3000:3000"
+      - "8021:3000"   # NAS 호스트 8021 노출
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/pbg.db
@@ -130,11 +130,11 @@ services:
 
 ## 5. 외부 접속 — DSM 리버스 프록시
 
-직접 포트(3000) 노출 대신 DSM 리버스 프록시로 HTTPS 종단을 권장.
+직접 포트(8021) 노출 대신 DSM 리버스 프록시로 HTTPS 종단을 권장.
 
 1. **제어판 > 로그인 포털 > 고급 > 역방향 프록시 > 생성**
 2. 소스: `https://photobooks.example.com` (서브도메인 + Let's Encrypt 인증서)
-3. 대상: `http://localhost:3000`
+3. 대상: `http://localhost:8021`
 4. 사용자 정의 헤더: `WebSocket` 헤더 활성화 (SSE 가 동작하도록 `Upgrade`/`Connection` 헤더 전달)
 5. 가능하면 추가로 Tailscale/WireGuard 뒤에 두기를 권장. 앱 자체는 단일
    비밀번호 인증만 제공한다.

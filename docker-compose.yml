@@ -12,7 +12,8 @@ services:
     image: photobookgallery:latest
     container_name: photobookgallery
     ports:
-      - "3000:3000"
+      # 호스트(NAS) 8021 → 컨테이너 3000. DSM 리버스 프록시는 localhost:8021 로 향함.
+      - "8021:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/pbg.db
