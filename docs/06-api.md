@@ -3,6 +3,15 @@
 기본 prefix: `/api`. 인증 필요(세션 쿠키). 이미지 스트림 엔드포인트는 HTTP 캐시
 헤더(`ETag`, `Cache-Control`) 사용.
 
+> **구현 현황 (단계 1 완료)**
+> - ✅ 구현됨: 인증(login/logout/me), 헬스(`/api/health`), 루트(`GET/POST/DELETE /api/roots`,
+>   `POST /api/roots/:id/scan`), 아카이브(`GET /api/archives`, `:id`, `:id/entries`),
+>   이미지(`:id/cover.webp`, `:id/page/:index`), 작업(`GET /api/jobs`, `:id`).
+> - ⏳ 설계만(단계 2+): 아카이브 메타 수정(PATCH)/일괄편집, 모델·출판사·국가·시리즈·태그
+>   CRUD, 모델 병합, 통합 검색/패싯, 재압축(repack), SSE 스트림, 폴더 트리(`/api/tree`).
+> - 단계 1 목록 API의 필터는 현재 `q/format/favorite/sort/order/page/limit/includeMissing`만
+>   동작. `model/publisher/country/tag` 필터는 단계 2에서 추가.
+
 ## 1. 인증
 | 메서드 | 경로 | 설명 |
 |--------|------|------|

@@ -33,7 +33,7 @@ model LibraryRoot {
   id        Int       @id @default(autoincrement())
   path      String    @unique          // NAS 절대경로 (컨테이너 기준)
   label     String?
-  readOnly  Boolean   @default(true)    // 편집 허용 여부
+  readOnly  Boolean   @default(false)   // 편집 허용 여부 (단일 사용자 — 기본 허용)
   archives  Archive[]
   createdAt DateTime  @default(now())
 }
