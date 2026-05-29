@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+
+# runtime data (단일 진실 원천은 NAS 파일 — 아래는 캐시/생성물)
+data/
+cache/
+backups/
+*.db
+*.sqlite
+*.sqlite3
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
