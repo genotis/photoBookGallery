@@ -9,6 +9,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthGuard } from './auth/auth.guard';
 import { HealthModule } from './health/health.module';
+import { ArchiveModule } from './archive/archive.module';
+import { JobsModule } from './jobs/jobs.module';
+import { LibraryModule } from './library/library.module';
+import { ImagesModule } from './images/images.module';
+import { ArchivesModule } from './archives/archives.module';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -36,6 +41,11 @@ const isProd = process.env.NODE_ENV === 'production';
     PrismaModule,
     AuthModule,
     HealthModule,
+    ArchiveModule,
+    JobsModule,
+    LibraryModule,
+    ImagesModule,
+    ArchivesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })

@@ -8,4 +8,5 @@ export default () => ({
     secret: process.env.PBG_SESSION_SECRET ?? 'dev-insecure-secret',
   },
   backupDir: process.env.PBG_BACKUP_DIR ?? '/app/backups',
+  cacheDir: process.env.PBG_CACHE_DIR ?? './cache',
 });

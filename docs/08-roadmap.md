@@ -12,15 +12,17 @@
 - [ ] 헬스체크, 구조적 로깅.
 
 ## 단계 1 — MVP: 브라우징 + 갤러리 뷰잉 (읽기 전용)
-- [ ] LibraryRoot 등록 + 인덱서 Job(경로 walk, 아카이브 탐지, 엔트리 추출).
-- [ ] ZIP/CBZ 읽기(`node-stream-zip`) + RAR/CBR 읽기(`node-unrar-js`).
-- [ ] 자연 정렬, 표지 결정, pageCount 산출.
-- [ ] 썸네일 파이프라인(sharp + 디스크 캐시 + mtime 무효화).
-- [ ] 아카이브 목록 API + 가상 스크롤 그리드(masonic).
-- [ ] 뷰어(PhotoSwipe): 단일/더블/연속 모드, 프리로딩, 줌/스와이프.
-- [ ] 기본 검색/정렬/페이지네이션.
+- [x] LibraryRoot 등록 + 인덱서 Job(경로 walk, 아카이브 탐지, 엔트리 추출).
+- [x] ZIP/CBZ 읽기(`node-stream-zip`) + RAR/CBR 읽기(`node-unrar-js`).
+      ※ ZIP/CBZ는 E2E 검증 완료. RAR/CBR은 어댑터 구현·연결 완료(실파일 검증은 추후).
+- [x] 자연 정렬, 표지 결정, pageCount 산출. (1<2<10 검증)
+- [x] 썸네일 파이프라인(sharp + 디스크 캐시 + ETag/304 + 콘텐츠해시 키).
+- [x] 아카이브 목록 API + 가상 스크롤 그리드(masonic) + 무한 스크롤.
+- [x] 뷰어: 단일/연속 모드, 프리로딩, 키보드 네비게이션. (더블페이지·줌은 단계 4)
+- [x] 기본 검색/정렬/페이지네이션 + missing(원본 사라짐) 처리.
 
-**완료 기준**: NAS의 zip/cbz/cbr를 풀지 않고 그리드+뷰어로 끊김 없이 감상.
+**완료 기준**: NAS의 zip/cbz를 풀지 않고 그리드+뷰어로 끊김 없이 감상. ✅
+※ 식별은 BLAKE3 콘텐츠 해시 기반(이동/리네임 추적), 증분 스캔(size+mtime 스킵) 검증 완료.
 
 ## 단계 2 — 정리(Organize) / 메타데이터
 - [ ] Model/Publisher/Country/Series/Tag 엔티티 + CRUD.

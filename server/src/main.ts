@@ -7,6 +7,12 @@ import session from 'express-session';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
+// Prisma 의 BigInt 필드(sizeBytes 등)를 JSON 직렬화 가능하게 한다.
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON =
+  function (): string {
+    return this.toString();
+  };
+
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,

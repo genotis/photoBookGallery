@@ -11,6 +11,7 @@ services:
       - PBG_AUTH_PASSWORD=${PBG_AUTH_PASSWORD:-change_me}
       - PBG_SESSION_SECRET=${PBG_SESSION_SECRET:-please_change_this}
       - PBG_BACKUP_DIR=/app/backups
+      - PBG_CACHE_DIR=/app/cache
       - TZ=Asia/Seoul
     volumes:
       # NAS 미디어 (편집 위해 RW). 실제 경로로 교체.

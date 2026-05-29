@@ -1,0 +1,163 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { readdir, stat } from 'fs/promises';
+import { basename, join } from 'path';
+import { PrismaService } from '../prisma/prisma.service';
+import { ArchiveService } from '../archive/archive.service';
+import { JobsService } from '../jobs/jobs.service';
+import { detectArchiveFormat } from '../common/file.util';
+import { hashFile } from '../common/hash.util';
+
+@Injectable()
+export class IndexerService {
+  private readonly logger = new Logger(IndexerService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly archive: ArchiveService,
+    private readonly jobs: JobsService,
+  ) {}
+
+  /** 백그라운드 인덱싱 작업을 시작하고 즉시 jobId 를 돌려준다. */
+  async startScan(rootId: number): Promise<number> {
+    const job = await this.jobs.create('index', { rootId });
+    // fire-and-forget — 요청을 막지 않음
+    void this.runScan(job.id, rootId).catch((err) => {
+      this.logger.error(`인덱싱 실패 (job ${job.id})`, err as Error);
+      void this.jobs.fail(job.id, err);
+    });
+    return job.id;
+  }
+
+  private async runScan(jobId: number, rootId: number): Promise<void> {
+    const root = await this.prisma.libraryRoot.findUnique({
+      where: { id: rootId },
+    });
+    if (!root) {
+      await this.jobs.fail(jobId, '루트를 찾을 수 없습니다.');
+      return;
+    }
+
+    await this.jobs.start(jobId);
+
+    const files = await this.collectArchiveFiles(root.path);
+    const seen: string[] = [];
+    let processed = 0;
+
+    for (const file of files) {
+      try {
+        await this.processFile(rootId, file);
+        seen.push(file);
+      } catch (err) {
+        this.logger.warn(`아카이브 처리 실패: ${file} — ${String(err)}`);
+      }
+      processed += 1;
+      if (processed % 5 === 0 || processed === files.length) {
+        await this.jobs.setProgress(jobId, processed / Math.max(1, files.length));
+      }
+    }
+
+    // 사라진 파일은 즉시 삭제하지 않고 missing 표시 (메타 보존)
+    await this.prisma.archive.updateMany({
+      where: { rootId, path: { notIn: seen } },
+      data: { missing: true },
+    });
+
+    await this.jobs.done(jobId);
+    this.logger.log(
+      `인덱싱 완료 (root ${rootId}): ${seen.length}/${files.length} 처리`,
+    );
+  }
+
+  /** 루트 하위를 재귀 순회하여 지원 아카이브 파일 경로 목록을 모은다. */
+  private async collectArchiveFiles(rootPath: string): Promise<string[]> {
+    const result: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const e of entries) {
+        const full = join(dir, e.name);
+        if (e.isDirectory()) {
+          await walk(full);
+        } else if (e.isFile() && detectArchiveFormat(e.name)) {
+          result.push(full);
+        }
+      }
+    };
+    await walk(rootPath);
+    return result;
+  }
+
+  private async processFile(rootId: number, filePath: string): Promise<void> {
+    const format = detectArchiveFormat(filePath);
+    if (!format) {
+      return;
+    }
+
+    const st = await stat(filePath);
+    const sizeBytes = BigInt(st.size);
+    const mtime = st.mtime;
+
+    const existingByPath = await this.prisma.archive.findUnique({
+      where: { path: filePath },
+    });
+
+    // 경로/크기/수정시각이 모두 동일하면 이미 인덱싱됨 → 스킵
+    if (
+      existingByPath &&
+      !existingByPath.missing &&
+      existingByPath.sizeBytes === sizeBytes &&
+      existingByPath.mtime.getTime() === mtime.getTime()
+    ) {
+      return;
+    }
+
+    const contentHash = await hashFile(filePath);
+    const images = await this.archive.listImageEntries(filePath, format);
+    const coverEntry = images[0]?.name ?? null;
+
+    const data = {
+      rootId,
+      path: filePath,
+      fileName: basename(filePath),
+      format,
+      sizeBytes,
+      mtime,
+      contentHash,
+      pageCount: images.length,
+      coverEntry,
+      indexedAt: new Date(),
+      missing: false,
+    };
+
+    // 동일 해시(이동/리네임) 또는 동일 경로(내용 변경) 레코드를 갱신
+    const byHash = await this.prisma.archive.findUnique({
+      where: { contentHash },
+    });
+    const target = byHash ?? existingByPath;
+
+    const archiveId = target
+      ? (await this.prisma.archive.update({ where: { id: target.id }, data }))
+          .id
+      : (await this.prisma.archive.create({ data })).id;
+
+    await this.replaceEntries(
+      archiveId,
+      images.map((e, i) => ({
+        name: e.name,
+        order: i,
+        sizeBytes: BigInt(e.size),
+      })),
+    );
+  }
+
+  private async replaceEntries(
+    archiveId: number,
+    entries: { name: string; order: number; sizeBytes: bigint }[],
+  ): Promise<void> {
+    await this.prisma.entry.deleteMany({ where: { archiveId } });
+    if (entries.length) {
+      await this.prisma.entry.createMany({
+        data: entries.map((e) => ({ archiveId, ...e, isImage: true })),
+      });
+    }
+  }
+}

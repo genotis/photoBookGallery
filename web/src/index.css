@@ -13,44 +13,41 @@ body {
   color: #e8eaed;
 }
 
-.container {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 2rem 1rem;
+button {
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid #2a2e35;
+  color: #aeb4bd;
+}
+
+input,
+select {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid #2a2e35;
+  background: #14161a;
+  color: inherit;
+  font-size: 0.85rem;
 }
 
 .center {
   display: grid;
   place-items: center;
   min-height: 100vh;
-}
-
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 2rem;
-}
-
-h1 {
-  font-size: 1.4rem;
-  margin: 0;
-}
-
-.badge {
-  font-size: 0.8rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-}
-
-.badge.ok {
-  background: #163b2a;
-  color: #5fd39b;
-}
-
-.badge.down {
-  background: #3b1616;
-  color: #ef7676;
 }
 
 .card {
@@ -60,39 +57,268 @@ h1 {
   padding: 1.5rem;
 }
 
-.card h2 {
-  margin-top: 0;
-}
-
-form {
+.card form {
   display: flex;
   gap: 0.5rem;
-}
-
-input {
-  flex: 1;
-  padding: 0.6rem 0.8rem;
-  border-radius: 8px;
-  border: 1px solid #2a2e35;
-  background: #14161a;
-  color: inherit;
-}
-
-button {
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  border: none;
-  background: #3b82f6;
-  color: white;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
+  margin-top: 0.5rem;
 }
 
 .error {
   color: #ef7676;
-  margin-bottom: 0;
+  font-size: 0.85rem;
+}
+
+.muted {
+  color: #7c828c;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+.badge.ok {
+  background: #163b2a;
+  color: #5fd39b;
+}
+.badge.down {
+  background: #3b1616;
+  color: #ef7676;
+}
+
+/* ---- 레이아웃 ---- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1.2rem;
+  border-bottom: 1px solid #2a2e35;
+}
+.app-bar h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+.app-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ---- 루트 사이드바 ---- */
+.roots {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid #2a2e35;
+  padding: 1rem;
+  overflow-y: auto;
+}
+.roots h3 {
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+}
+.roots form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.root-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.root-list li {
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 8px;
+  padding: 0.6rem;
+}
+.root-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.root-path {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.root-count {
+  font-size: 0.75rem;
+  color: #7c828c;
+  white-space: nowrap;
+}
+.root-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+.root-actions button {
+  flex: 1;
+  font-size: 0.78rem;
+  padding: 0.35rem;
+}
+.job {
+  margin-top: 1rem;
+  font-size: 0.82rem;
+  color: #5fd39b;
+}
+
+/* ---- 그리드 ---- */
+.grid-wrap {
+  flex: 1;
+  padding: 1rem 1.2rem;
+  overflow-y: auto;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+.toolbar form {
+  display: flex;
+  gap: 0.4rem;
+}
+.toolbar .count {
+  margin-left: auto;
+  color: #7c828c;
+  font-size: 0.85rem;
+}
+.empty {
+  margin-top: 3rem;
+  text-align: center;
+}
+
+.card-cell {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+.card-cell img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.no-cover {
+  aspect-ratio: 3 / 4;
+  display: grid;
+  place-items: center;
+  color: #565c66;
+  font-size: 0.85rem;
+}
+.card-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.45rem 0.55rem;
+}
+.card-caption .name {
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-caption .pages {
+  font-size: 0.72rem;
+  color: #7c828c;
+  white-space: nowrap;
+}
+
+/* ---- 뷰어 ---- */
+.viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 11, 0.97);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+.viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  gap: 1rem;
+  border-bottom: 1px solid #2a2e35;
+}
+.viewer-title {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.viewer-page {
+  font-size: 0.85rem;
+  color: #aeb4bd;
+}
+.viewer-single {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 0;
+}
+.viewer-single .viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.viewer-single .nav {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18%;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 2.5rem;
+  opacity: 0.25;
+}
+.viewer-single .nav:hover:not(:disabled) {
+  opacity: 0.7;
+}
+.viewer-single .nav.prev {
+  left: 0;
+}
+.viewer-single .nav.next {
+  right: 0;
+}
+.viewer-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 1rem 0;
+}
+.viewer-scroll .viewer-img {
+  max-width: min(900px, 100%);
 }

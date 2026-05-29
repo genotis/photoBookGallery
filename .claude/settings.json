@@ -14,7 +14,14 @@
       "Bash(echo \"started pid $!\")",
       "Bash(curl -s localhost:3000/api/health)",
       "Bash(curl -s localhost:3000/api/auth/me)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" localhost:3000/api/archives)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" localhost:3000/api/archives)",
+      "Bash(mkdir -p /tmp/pbg-test/books)",
+      "Bash(node -e ' *)",
+      "Read(//tmp/pbg-test/**)",
+      "Bash(zip -q /tmp/pbg-test/books/sample-A.cbz 1.jpg 2.jpg 10.jpg)",
+      "Bash(zip -q /tmp/pbg-test/books/sample-B.cbz 1.jpg 2.jpg)",
+      "Bash(lsof -ti:3000)",
+      "Bash(xargs kill -9)"
     ]
   }
 }
