@@ -1,0 +1,151 @@
+// photoBookGallery 도메인 스키마
+// 식별 기준 = contentHash(내용 전체 해시). 파일이 단일 진실 원천, DB는 인덱스/메타.
+// 자세한 설계: docs/05-data-model.md
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model LibraryRoot {
+  id        Int       @id @default(autoincrement())
+  path      String    @unique // NAS 절대경로 (컨테이너 기준)
+  label     String?
+  readOnly  Boolean   @default(false) // 편집 허용 여부
+  archives  Archive[]
+  createdAt DateTime  @default(now())
+}
+
+model Archive {
+  id          Int          @id @default(autoincrement())
+  rootId      Int
+  root        LibraryRoot  @relation(fields: [rootId], references: [id])
+  path        String       @unique // 현재 파일 경로 (이동 시 갱신됨)
+  fileName    String
+  format      String // zip | cbz | rar | cbr | 7z
+  sizeBytes   BigInt
+  mtime       DateTime // 원본 수정시각 (해시/캐시 무효화 키)
+  contentHash String       @unique // 식별 기준 (BLAKE3/xxHash64 전체 해시)
+  pageCount   Int          @default(0)
+  coverEntry  String? // 표지로 쓸 엔트리 이름
+
+  // 분류
+  countryId   Int?
+  country     Country?     @relation(fields: [countryId], references: [id])
+  publisherId Int?
+  publisher   Publisher?   @relation(fields: [publisherId], references: [id])
+  seriesId    Int?
+  series      Series?      @relation(fields: [seriesId], references: [id])
+  models      ArchiveModel[]
+  tags        ArchiveTag[]
+  entries     Entry[]
+
+  // 사용자 메타
+  publishedAt DateTime?
+  rating      Int? // 0~5
+  favorite    Boolean      @default(false)
+  note        String?
+
+  // 상태
+  indexedAt   DateTime?
+  missing     Boolean      @default(false) // 원본이 사라졌는지
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([countryId])
+  @@index([publisherId])
+  @@index([seriesId])
+  @@index([favorite])
+  @@index([rating])
+  @@index([mtime])
+  @@index([contentHash])
+}
+
+model Entry {
+  id        Int      @id @default(autoincrement())
+  archiveId Int
+  archive   Archive  @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+  name      String // 압축 내 엔트리 경로
+  order     Int // 자연정렬 후 페이지 순서
+  sizeBytes BigInt?
+  width     Int?
+  height    Int?
+  isImage   Boolean  @default(true)
+
+  @@unique([archiveId, name])
+  @@index([archiveId, order])
+}
+
+model Model {
+  id         Int            @id @default(autoincrement())
+  name       String         @unique
+  aliases    String? // JSON 배열 문자열 (별칭/표기 변형)
+  profileImg String?
+  bio        String?
+  archives   ArchiveModel[]
+  createdAt  DateTime       @default(now())
+}
+
+model ArchiveModel {
+  archiveId Int
+  modelId   Int
+  archive   Archive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+  model     Model   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@id([archiveId, modelId])
+  @@index([modelId])
+}
+
+model Publisher {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  kind     String? // 잡지사 | 스튜디오 | 개인 등
+  archives Archive[]
+}
+
+model Country {
+  id       Int       @id @default(autoincrement())
+  code     String    @unique // JP, KR, ...
+  name     String
+  archives Archive[]
+}
+
+model Series {
+  id       Int       @id @default(autoincrement())
+  name     String
+  archives Archive[]
+}
+
+model Tag {
+  id       Int          @id @default(autoincrement())
+  name     String       @unique
+  archives ArchiveTag[]
+}
+
+model ArchiveTag {
+  archiveId Int
+  tagId     Int
+  archive   Archive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([archiveId, tagId])
+  @@index([tagId])
+}
+
+model Job {
+  id        Int      @id @default(autoincrement())
+  type      String // index | thumbnail | repack
+  status    String   @default("pending") // pending | running | done | failed
+  payload   String // JSON
+  progress  Float    @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([type])
+}

@@ -4,7 +4,17 @@
       "Bash(docker --version)",
       "Bash(git config *)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(npm install *)",
+      "Bash(DATABASE_URL=\"file:./data/pbg.db\" npx prisma migrate dev --name init)",
+      "Bash(DATABASE_URL=\"file:./data/pbg.db\" PORT=3000 PBG_AUTH_PASSWORD=\"testpw\" PBG_SESSION_SECRET=\"smoketest-secret\" NODE_ENV=development node dist/main.js)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(curl -s localhost:3000/api/health)",
+      "Bash(curl -s localhost:3000/api/auth/me)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" localhost:3000/api/archives)"
     ]
   }
 }

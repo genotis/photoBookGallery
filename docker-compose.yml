@@ -1,0 +1,24 @@
+services:
+  pbg:
+    build: .
+    image: photobookgallery:latest
+    container_name: photobookgallery
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/pbg.db
+      - PBG_AUTH_PASSWORD=${PBG_AUTH_PASSWORD:-change_me}
+      - PBG_SESSION_SECRET=${PBG_SESSION_SECRET:-please_change_this}
+      - PBG_BACKUP_DIR=/app/backups
+      - TZ=Asia/Seoul
+    volumes:
+      # NAS 미디어 (편집 위해 RW). 실제 경로로 교체.
+      - /volume1/photobooks:/media/photobooks
+      # 편집 시 원본 백업 보관
+      - /volume1/docker/pbg/backups:/app/backups
+      # SQLite DB (백업 대상)
+      - /volume1/docker/pbg/data:/app/data
+      # 썸네일 캐시 (재생성 가능)
+      - /volume1/docker/pbg/cache:/app/cache
+    restart: unless-stopped

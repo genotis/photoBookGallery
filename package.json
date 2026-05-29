@@ -1,0 +1,24 @@
+{
+  "name": "photobookgallery",
+  "version": "0.0.1",
+  "private": true,
+  "description": "NAS 압축파일(zip/cbz/cbr/rar) 사진집 브라우징·정리·갤러리 뷰잉 웹앱",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:generate": "npm run db:generate -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

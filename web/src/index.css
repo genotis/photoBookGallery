@@ -1,0 +1,98 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #14161a;
+  color: #e8eaed;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.center {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.badge {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+}
+
+.badge.ok {
+  background: #163b2a;
+  color: #5fd39b;
+}
+
+.badge.down {
+  background: #3b1616;
+  color: #ef7676;
+}
+
+.card {
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #2a2e35;
+  background: #14161a;
+  color: inherit;
+}
+
+button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  color: #ef7676;
+  margin-bottom: 0;
+}

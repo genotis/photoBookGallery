@@ -9,6 +9,33 @@
 - **주 콘텐츠**: 일본 그라비아 사진집 (모델 중심 분류)
 - **분류 축**: 국가 / 출판사(제작주체) / 모델 / 시리즈 / 태그
 
+## 개발 시작 (로컬)
+
+```bash
+# 1) 의존성 설치 (npm workspaces)
+npm install
+
+# 2) 환경변수 준비
+cp .env.example server/.env       # PBG_AUTH_PASSWORD 등 수정
+
+# 3) DB 마이그레이션 + Prisma client 생성
+npm run db:migrate -w server      # 최초 1회 (이후 prisma 변경 시)
+
+# 4) 개발 서버 (api: :3000, web: :5173 — /api는 자동 프록시)
+npm run dev
+```
+
+- 백엔드: NestJS — `server/` (헬스체크 `GET /api/health`, 인증 `POST /api/auth/login`)
+- 프론트엔드: React+Vite — `web/` (헬스 상태 + 로그인 UI)
+
+## 배포 (Synology Docker)
+
+```bash
+docker compose up -d --build         # docker-compose.yml 의 볼륨 경로를 NAS에 맞게 수정
+```
+
+자세한 내용은 [docs/07-deployment.md](docs/07-deployment.md).
+
 ## 문서
 
 개발에 착수하기 전, 아래 설계 문서를 먼저 검토하세요.
