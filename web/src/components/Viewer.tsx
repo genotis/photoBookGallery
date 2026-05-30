@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ArchiveListItem, pageUrl } from '../api';
 import { useJobStream } from './useJobStream';
+import { useViewerBehavior } from './useViewerBehavior';
 
 type ViewMode = 'single' | 'scroll-v' | 'scroll-h';
 type FitMode = 'screen' | 'width' | 'height' | 'original';
@@ -89,6 +90,8 @@ export function Viewer({
   const [fit, setFit] = useState<FitMode>(initialPrefs.fit);
   const [dir, setDir] = useState<ReadDir>(initialPrefs.dir);
   useEffect(() => savePrefs({ view, fit, dir }), [view, fit, dir]);
+
+  const [behavior] = useViewerBehavior();
 
   const [index, setIndex] = useState(0);
 
@@ -328,10 +331,20 @@ export function Viewer({
 
   return (
     <div
-      className={`viewer view-${view} fit-${fit} dir-${dir}`}
+      className={`viewer view-${view} fit-${fit} dir-${dir} ${
+        behavior.tapNav ? 'tap-nav' : ''
+      }`}
       onClick={onClose}
-      onMouseMove={revealBar}
-      onTouchStart={revealBar}
+      onMouseMove={
+        behavior.reveal === 'motion' || behavior.reveal === 'both'
+          ? revealBar
+          : undefined
+      }
+      onTouchStart={
+        behavior.reveal === 'motion' || behavior.reveal === 'both'
+          ? revealBar
+          : undefined
+      }
     >
       <header
         className={`viewer-bar ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
@@ -483,6 +496,7 @@ export function Viewer({
           <button
             className="nav prev"
             onClick={() => go(dir === 'rtl' ? 1 : -1)}
+            onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index >= total - 1 : index === 0}
             aria-label="이전 페이지"
           >
@@ -511,6 +525,7 @@ export function Viewer({
           <button
             className="nav next"
             onClick={() => go(dir === 'rtl' ? -1 : 1)}
+            onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index === 0 : index >= total - 1}
             aria-label="다음 페이지"
           >

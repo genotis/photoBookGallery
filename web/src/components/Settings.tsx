@@ -7,6 +7,7 @@ import {
 import { api, Root } from '../api';
 import { AutoTagPanel } from './AutoTagPanel';
 import { DuplicatesPanel } from './DuplicatesPanel';
+import { ViewerBehaviorPanel } from './ViewerBehaviorPanel';
 import { useJobStream } from './useJobStream';
 
 function RootRow({ root }: { root: Root }) {
@@ -221,6 +222,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </header>
         <div className="settings-body">
           <RootsPanel />
+          <ViewerBehaviorPanel />
           <AutoTagPanel />
           <DuplicatesPanel />
         </div>
