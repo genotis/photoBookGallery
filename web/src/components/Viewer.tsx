@@ -99,6 +99,8 @@ export function Viewer({
   // 스크롤 컨테이너 ref — 키보드/스와이프 nav 시 명시적 scrollIntoView
   const scrollHRef = useRef<HTMLDivElement | null>(null);
   const scrollVRef = useRef<HTMLDivElement | null>(null);
+  // 하단 썸네일 스트립 ref — 현재 페이지가 항상 가운데에 보이도록 자동 정렬
+  const thumbsRef = useRef<HTMLDivElement | null>(null);
 
   /** 명시적 nav (키보드/스와이프/버튼). 스크롤 컨테이너 동기화 포함. */
   const navTo = useCallback(
@@ -170,6 +172,12 @@ export function Viewer({
       }
     });
   }, [archive.id, index, view, total]);
+
+  // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
+  useEffect(() => {
+    const child = thumbsRef.current?.children[index] as HTMLElement | undefined;
+    child?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [index]);
 
   // 보기 모드가 바뀌면 현재 index 위치로 스크롤 동기화 (한 번만)
   const indexRef = useRef(index);
@@ -548,6 +556,34 @@ export function Viewer({
             </div>
           ))}
         </div>
+      )}
+
+      {/* 하단 썸네일 네비게이션 — 페이지 직접 이동. 상단바와 동기 자동 숨김. */}
+      {total > 1 && (
+        <nav
+          className={`viewer-thumbs ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="thumbs-inner" ref={thumbsRef} dir={dir}>
+            {Array.from({ length: total }, (_, i) => (
+              <button
+                key={i}
+                className={`thumb ${i === index ? 'on' : ''}`}
+                onClick={() => navTo(i)}
+                title={`페이지 ${i + 1}`}
+                aria-label={`페이지 ${i + 1}로 이동`}
+              >
+                <img
+                  src={pageUrl(archive.id, i, 'thumb')}
+                  alt=""
+                  loading="lazy"
+                  draggable={false}
+                />
+                <span className="thumb-num">{i + 1}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
       )}
     </div>
   );

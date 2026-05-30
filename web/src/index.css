@@ -491,6 +491,103 @@ select {
 .viewer-page {
   display: none;
 }
+
+/* ---- 하단 썸네일 네비게이션 ---- */
+.viewer-thumbs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  background: linear-gradient(
+    to top,
+    rgba(14, 16, 20, 0.92) 0%,
+    rgba(14, 16, 20, 0.7) 60%,
+    rgba(14, 16, 20, 0) 100%
+  );
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 14px calc(0.6rem + var(--sa-right)) calc(8px + var(--sa-bottom))
+    calc(0.6rem + var(--sa-left));
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.viewer-thumbs.hidden {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+.thumbs-inner {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  /* 스크롤바 최소화 */
+  scrollbar-width: thin;
+}
+.thumbs-inner::-webkit-scrollbar {
+  height: 6px;
+}
+.thumbs-inner::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+.thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 76px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.12s, transform 0.12s;
+}
+.thumb:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.thumb.on {
+  border-color: #3b82f6;
+  transform: scale(1.05);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.thumb-num {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.62rem;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  line-height: 1.2;
+}
+.thumb.on .thumb-num {
+  background: #3b82f6;
+}
+
+/* 좁은 화면에서는 썸네일 살짝 작게 */
+@media (max-width: 720px) {
+  .thumb {
+    width: 48px;
+    height: 64px;
+  }
+  .viewer-thumbs {
+    padding-top: 10px;
+  }
+}
 .viewer-single {
   flex: 1;
   display: flex;
