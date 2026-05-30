@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ArchiveListItem, pageUrl } from '../api';
 import { useJobStream } from './useJobStream';
@@ -231,38 +238,59 @@ export function Viewer({
     child?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [index]);
 
-  // 썸네일 스트립 매그니피케이션 — 마우스 X 위치 기준으로 가까운 썸네일이 커지고,
-  // 주변 썸네일은 macOS Dock 처럼 옆으로 밀려난다 (누적 translateX).
-  // 핵심: getBoundingClientRect 는 현재 transform 의 영향을 받아 프레임마다 드리프트가
-  // 누적된다. 그래서 transform 에 영향 없는 layout 기준값(offsetLeft/offsetWidth)으로
-  // 안정된 좌표를 사용한다.
+  // 썸네일 스트립 매그니피케이션 (macOS Dock 스타일)
+  //
+  // 핵심 설계: 기준 좌표(untransformed offsetLeft) 를 마운트/사진집 변경 시
+  // 한 번만 측정해 캐시한다. 매 프레임 transform 만 갱신하니 layout 변화가 없고,
+  // 캐시된 centers 로 거리 계산이 흔들리지 않아 인접 썸네일 사이 gap 이 정확히 유지됨.
   const magnifyRafRef = useRef<number | null>(null);
-  const onThumbsMouseMove = useCallback((e: React.MouseEvent) => {
+  const baseCentersRef = useRef<number[] | null>(null);
+  const baseWidthRef = useRef<number>(0);
+
+  // 사진집/총 페이지 수가 바뀌면 기준 좌표 재측정
+  useLayoutEffect(() => {
     const inner = thumbsRef.current;
     if (!inner) return;
+    // 기존 transform 제거 후 깨끗한 layout 측정
+    const N = inner.children.length;
+    for (let j = 0; j < N; j++) {
+      (inner.children[j] as HTMLElement).style.transform = '';
+    }
+    // 강제 reflow 후 측정
+    void inner.offsetWidth;
+    const centers: number[] = [];
+    for (let j = 0; j < N; j++) {
+      const el = inner.children[j] as HTMLElement;
+      centers.push(el.offsetLeft + el.offsetWidth / 2);
+    }
+    baseCentersRef.current = centers;
+    baseWidthRef.current = N > 0 ? (inner.children[0] as HTMLElement).offsetWidth : 0;
+  }, [archive.id, total]);
+
+  const onThumbsMouseMove = useCallback((e: React.MouseEvent) => {
+    const inner = thumbsRef.current;
+    const centers = baseCentersRef.current;
+    const baseW = baseWidthRef.current;
+    if (!inner || !centers || baseW === 0) return;
     const mouseX = e.clientX;
     if (magnifyRafRef.current !== null) return;
     magnifyRafRef.current = requestAnimationFrame(() => {
       magnifyRafRef.current = null;
-      const N = inner.children.length;
-      if (N === 0) return;
+      const N = centers.length;
+      if (inner.children.length !== N) return; // 캐시 stale 보호
+
+      const innerRect = inner.getBoundingClientRect();
+      const mouseInInner = mouseX - innerRect.left + inner.scrollLeft;
 
       const RADIUS = 160;
-      const MAX_SCALE = 1.8;
-      const baseW = (inner.children[0] as HTMLElement).offsetWidth;
-      // inner 는 transform 안 받음 → viewport 위치 안정. scrollLeft 변동만 있음.
-      const innerRect = inner.getBoundingClientRect();
-      const scrollLeft = inner.scrollLeft;
+      const MAX_SCALE = 1.7;
 
-      // 1) 각 썸네일의 untransformed viewport 중심 + scale 계산
+      // 1) scale + cursorIdx (캐시된 centers 사용 → 안정적)
       const scales = new Array<number>(N);
       let cursorIdx = 0;
       let cursorDist = Infinity;
       for (let j = 0; j < N; j++) {
-        const el = inner.children[j] as HTMLElement;
-        const layoutCenter = el.offsetLeft + el.offsetWidth / 2;
-        const viewportCenter = innerRect.left + layoutCenter - scrollLeft;
-        const d = Math.abs(mouseX - viewportCenter);
+        const d = Math.abs(mouseInInner - centers[j]);
         if (d < cursorDist) {
           cursorDist = d;
           cursorIdx = j;
@@ -272,9 +300,9 @@ export function Viewer({
         scales[j] = 1 + (MAX_SCALE - 1) * eased;
       }
 
-      // 2) 누적 translateX — 커서 썸네일은 제자리, 양쪽으로 밀려남.
-      //    인접 두 썸네일의 (scale-1)*W/2 합만큼 떨어뜨리면 원래 gap 이 그대로 유지된다.
-      const halfExtras = scales.map((s) => ((s - 1) * baseW) / 2);
+      // 2) 누적 translateX: 인접 두 썸네일의 (scale-1)*W/2 합 만큼 떨어뜨림
+      const halfExtras = new Array<number>(N);
+      for (let j = 0; j < N; j++) halfExtras[j] = ((scales[j] - 1) * baseW) / 2;
       const translates = new Array<number>(N).fill(0);
       for (let i = cursorIdx + 1; i < N; i++) {
         translates[i] = translates[i - 1] + halfExtras[i - 1] + halfExtras[i];
@@ -285,7 +313,7 @@ export function Viewer({
 
       for (let j = 0; j < N; j++) {
         const el = inner.children[j] as HTMLElement;
-        el.style.transform = `translateX(${translates[j].toFixed(2)}px) scale(${scales[j].toFixed(3)})`;
+        el.style.transform = `translate3d(${translates[j].toFixed(2)}px, 0, 0) scale(${scales[j].toFixed(3)})`;
         el.style.zIndex = scales[j] > 1.05 ? '2' : '';
       }
     });

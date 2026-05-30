@@ -533,13 +533,15 @@ select {
   flex-wrap: nowrap;
   align-items: flex-end; /* 썸네일이 바닥에 붙음 — 위쪽 공간은 자라기용 */
   gap: 4px;
-  /* 기본 48px + max 1.8 scale = ~86px. 약간 여유. */
-  height: 92px;
+  /* 기본 48px + max 1.7 scale = ~82px. 약간 여유. */
+  height: 90px;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  /* thumb.offsetParent 가 inner 가 되도록 (offsetLeft 가 inner 기준 좌표) */
+  position: relative;
 }
 .thumbs-inner::-webkit-scrollbar {
   height: 6px;
@@ -550,7 +552,7 @@ select {
 }
 .thumb {
   flex: 0 0 auto;
-  /* 기본 크기 축소 */
+  /* 기본 크기 */
   width: 36px;
   height: 48px;
   padding: 0;
@@ -560,10 +562,11 @@ select {
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  /* 매그니피케이션: 마우스가 가까워지면 위쪽으로 커지고, 옆 썸네일은 옆으로 밀린다. */
+  /* 매그니피케이션: 마우스가 가까워지면 위쪽으로 커지고, translateX 로 옆으로 밀린다. */
   transform-origin: center bottom;
-  transition: border-color 0.12s, transform 0.07s ease-out;
-  /* GPU 합성으로 부드럽게 */
+  /* rAF 가 매 프레임 정확한 transform 을 설정 — CSS transition 으로 중간 상태에서
+     겹치지 않도록 transform 자체에는 transition 을 두지 않음. border-color 만 부드럽게. */
+  transition: border-color 0.12s;
   will-change: transform;
 }
 .thumb:hover {
