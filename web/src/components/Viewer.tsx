@@ -281,20 +281,47 @@ export function Viewer({
     return () => observer.disconnect();
   }, [view, total, archive.id]);
 
-  // 터치 스와이프 (단일 모드) — RTL 시 의미 반전
+  // 터치 스와이프 + nav 버튼 클릭 억제용 공유 상태.
+  // 사용자가 손가락을 끌면 swipedRef = true 가 되어 직후 발생할 합성 click 을
+  // nav 버튼이 무시한다 (스와이프 우선).
   const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const swipedRef = useRef(false);
   const onTouchStart = (e: React.TouchEvent) => {
-    if (view !== 'single' || selectMode) return;
+    if (selectMode) return;
+    swipedRef.current = false;
     touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = e.touches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
+      swipedRef.current = true;
+    }
   };
   const onTouchEnd = (e: React.TouchEvent) => {
     if (touchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     touchStartX.current = null;
+    touchStartY.current = null;
+    if (view !== 'single' || selectMode) return;
     if (Math.abs(dx) < 50) return;
-    const fwd = dir === 'rtl' ? 1 : -1; // RTL: 오른쪽으로 스와이프하면 다음
+    swipedRef.current = true; // 명시적 swipe — 직후 합성 click 차단
+    const fwd = dir === 'rtl' ? 1 : -1;
     go(dx * fwd < 0 ? 1 : -1);
   };
+  const navIfNotSwiped = useCallback(
+    (delta: number) => {
+      if (swipedRef.current) {
+        swipedRef.current = false;
+        return;
+      }
+      go(delta);
+    },
+    [go],
+  );
 
   // 전체화면 토글 (Fullscreen API). iPad Safari 는 미지원 — 홈화면 추가 PWA 가 대안.
   const [isFs, setIsFs] = useState(
@@ -342,6 +369,39 @@ export function Viewer({
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
     setBarVisible((v) => !v);
   }, [selectMode]);
+
+  // 중앙 영역 더블탭/더블클릭 감지 — iPad Safari 는 onDoubleClick 이 신뢰성
+  // 떨어져 click 두 번을 직접 측정한다. 좌/우 nav 버튼 click 은 frame 의 sibling
+  // 이라 frame 의 onClick 으로 bubble 되지 않으므로 자연스럽게 제외됨.
+  const lastCenterTapRef = useRef<{ t: number; x: number; y: number } | null>(
+    null,
+  );
+  const onCenterClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (selectMode) return;
+      // 스와이프로 끝난 경우의 합성 click 은 무시
+      if (swipedRef.current) {
+        swipedRef.current = false;
+        return;
+      }
+      const now = Date.now();
+      const x = e.clientX;
+      const y = e.clientY;
+      const last = lastCenterTapRef.current;
+      if (
+        last &&
+        now - last.t < 350 &&
+        Math.abs(x - last.x) < 40 &&
+        Math.abs(y - last.y) < 40
+      ) {
+        lastCenterTapRef.current = null;
+        toggleBarManual();
+      } else {
+        lastCenterTapRef.current = { t: now, x, y };
+      }
+    },
+    [selectMode, toggleBarManual],
+  );
 
   // ---- 재압축 ----
   const [activeJob, setActiveJob] = useState<number | null>(null);
@@ -576,13 +636,13 @@ export function Viewer({
         <div
           className="viewer-single"
           onClick={(e) => e.stopPropagation()}
-          onDoubleClick={toggleBarManual}
           onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
           <button
             className="nav prev"
-            onClick={() => go(dir === 'rtl' ? 1 : -1)}
+            onClick={() => navIfNotSwiped(dir === 'rtl' ? 1 : -1)}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index >= total - 1 : index === 0}
             aria-label="이전 페이지"
@@ -592,7 +652,9 @@ export function Viewer({
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(index) ? 'selected' : ''
               }`}
-              onClick={selectMode ? () => toggle(index) : undefined}
+              onClick={
+                selectMode ? () => toggle(index) : onCenterClick
+              }
             >
               <img
                 key={index}
@@ -609,7 +671,7 @@ export function Viewer({
           )}
           <button
             className="nav next"
-            onClick={() => go(dir === 'rtl' ? -1 : 1)}
+            onClick={() => navIfNotSwiped(dir === 'rtl' ? -1 : 1)}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index === 0 : index >= total - 1}
             aria-label="다음 페이지"
@@ -620,7 +682,6 @@ export function Viewer({
           ref={scrollVRef}
           className="viewer-scroll-v"
           onClick={(e) => e.stopPropagation()}
-          onDoubleClick={toggleBarManual}
         >
           {Array.from({ length: total }, (_, i) => (
             <div
@@ -628,7 +689,7 @@ export function Viewer({
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
               }`}
-              onClick={selectMode ? () => toggle(i) : undefined}
+              onClick={selectMode ? () => toggle(i) : onCenterClick}
             >
               <img
                 className="viewer-img"
@@ -647,11 +708,13 @@ export function Viewer({
         <div
           className="viewer-scroll-h-wrap"
           onClick={(e) => e.stopPropagation()}
-          onDoubleClick={toggleBarManual}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
         >
           <button
             className="nav prev"
-            onClick={() => go(dir === 'rtl' ? 1 : -1)}
+            onClick={() => navIfNotSwiped(dir === 'rtl' ? 1 : -1)}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index >= total - 1 : index === 0}
             aria-label="이전 페이지"
@@ -661,7 +724,6 @@ export function Viewer({
             className="viewer-scroll-h"
             dir={dir}
             onClick={(e) => e.stopPropagation()}
-            onDoubleClick={toggleBarManual}
           >
             {Array.from({ length: total }, (_, i) => (
               <div
@@ -669,7 +731,7 @@ export function Viewer({
                 className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                   isSelected(i) ? 'selected' : ''
                 }`}
-                onClick={selectMode ? () => toggle(i) : undefined}
+                onClick={selectMode ? () => toggle(i) : onCenterClick}
               >
                 <img
                   className="viewer-img"
@@ -686,7 +748,7 @@ export function Viewer({
           </div>
           <button
             className="nav next"
-            onClick={() => go(dir === 'rtl' ? -1 : 1)}
+            onClick={() => navIfNotSwiped(dir === 'rtl' ? -1 : 1)}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index === 0 : index >= total - 1}
             aria-label="다음 페이지"
