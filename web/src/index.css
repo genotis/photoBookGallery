@@ -484,6 +484,15 @@ select {
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M6 2 L6 6 L2 6 M10 2 L10 6 L14 6 M6 14 L6 10 L2 10 M10 14 L10 10 L14 10' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M6 2 L6 6 L2 6 M10 2 L10 6 L14 6 M6 14 L6 10 L2 10 M10 14 L10 10 L14 10' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
+/* 사진집 이전/다음 — 좌/우측 세로 바 + 안쪽으로 향하는 chevron (트랙 스킵 스타일) */
+.i-archive-prev {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M3 3 V13 M14 3 L7 8 L14 13 Z' fill='%23000' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M3 3 V13 M14 3 L7 8 L14 13 Z' fill='%23000' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+.i-archive-next {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M13 3 V13 M2 3 L9 8 L2 13 Z' fill='%23000' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M13 3 V13 M2 3 L9 8 L2 13 Z' fill='%23000' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
 
 /* ---- 구 viewer-tools / viewer-title 호환 (남은 곳 없으면 제거 가능) ---- */
 .viewer-title,

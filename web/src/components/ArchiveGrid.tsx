@@ -171,16 +171,39 @@ export function ArchiveGrid({
         </ActionsContext.Provider>
       )}
 
-      {viewer && (
-        <Viewer
-          archive={viewer}
-          onClose={() => setViewer(null)}
-          onEdit={() => {
-            setEditingId(viewer.id);
-            setViewer(null);
-          }}
-        />
-      )}
+      {viewer &&
+        (() => {
+          const idx = items.findIndex((it) => it.id === viewer.id);
+          const hasPrev = idx > 0;
+          const hasNext = idx >= 0 && idx < items.length - 1;
+          const navigateArchive = (delta: number) => {
+            if (idx < 0) return;
+            const target = items[idx + delta];
+            if (target) setViewer(target);
+            // 끝쪽으로 갈 때 다음 페이지를 선제적으로 받아둠
+            if (
+              delta > 0 &&
+              idx + delta >= items.length - 5 &&
+              query.hasNextPage &&
+              !query.isFetchingNextPage
+            ) {
+              void query.fetchNextPage();
+            }
+          };
+          return (
+            <Viewer
+              archive={viewer}
+              onClose={() => setViewer(null)}
+              onEdit={() => {
+                setEditingId(viewer.id);
+                setViewer(null);
+              }}
+              onNavigateArchive={navigateArchive}
+              hasPrev={hasPrev}
+              hasNext={hasNext}
+            />
+          );
+        })()}
       {editingId !== null && (
         <MetaPanel archiveId={editingId} onClose={() => setEditingId(null)} />
       )}

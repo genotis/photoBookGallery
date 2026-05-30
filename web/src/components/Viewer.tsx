@@ -73,10 +73,17 @@ export function Viewer({
   archive,
   onClose,
   onEdit,
+  onNavigateArchive,
+  hasPrev = false,
+  hasNext = false,
 }: {
   archive: ArchiveListItem;
   onClose: () => void;
   onEdit?: () => void;
+  /** 부모(그리드)가 정의한 prev/next 사진집으로 이동 */
+  onNavigateArchive?: (delta: number) => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
 }) {
   const qc = useQueryClient();
   const entries = useQuery({
@@ -104,6 +111,15 @@ export function Viewer({
   const scrollVRef = useRef<HTMLDivElement | null>(null);
   // 하단 썸네일 스트립 ref — 현재 페이지가 항상 가운데에 보이도록 자동 정렬
   const thumbsRef = useRef<HTMLDivElement | null>(null);
+
+  // 사진집이 바뀌면 페이지·선택 상태 초기화 + 스크롤 위치 리셋
+  useEffect(() => {
+    setIndex(0);
+    setSelected(new Set());
+    setSelectMode(false);
+    scrollVRef.current?.scrollTo({ top: 0 });
+    scrollHRef.current?.scrollTo({ left: 0 });
+  }, [archive.id]);
 
   /** 명시적 nav (키보드/스와이프/버튼). 스크롤 컨테이너 동기화 포함. */
   const navTo = useCallback(
@@ -152,6 +168,15 @@ export function Viewer({
         }
         return;
       }
+      // 사진집 이동 — `[` 이전, `]` 다음 (페이지 위치와 무관)
+      if (e.key === '[' && hasPrev && onNavigateArchive) {
+        onNavigateArchive(-1);
+        return;
+      }
+      if (e.key === ']' && hasNext && onNavigateArchive) {
+        onNavigateArchive(1);
+        return;
+      }
       const horizontal = view === 'single' || view === 'scroll-h';
       if (!horizontal) return;
       const fwd = dir === 'rtl' ? -1 : 1;
@@ -163,7 +188,7 @@ export function Viewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dir, go, index, view, onClose, selectMode, toggle]);
+  }, [dir, go, index, view, onClose, selectMode, toggle, hasPrev, hasNext, onNavigateArchive]);
 
   // 프리로딩 (단일/가로 모드)
   useEffect(() => {
@@ -366,6 +391,28 @@ export function Viewer({
           >
             <span className={`vb-ico ${isFs ? 'i-fs-exit' : 'i-fs-enter'}`} />
           </button>
+          {onNavigateArchive && (
+            <div className="vb-seg" role="group" aria-label="사진집 이동">
+              <button
+                className="vb-seg-item"
+                onClick={() => onNavigateArchive(-1)}
+                disabled={!hasPrev}
+                title="이전 사진집 ( [ )"
+                aria-label="이전 사진집"
+              >
+                <span className="vb-ico i-archive-prev" />
+              </button>
+              <button
+                className="vb-seg-item"
+                onClick={() => onNavigateArchive(1)}
+                disabled={!hasNext}
+                title="다음 사진집 ( ] )"
+                aria-label="다음 사진집"
+              >
+                <span className="vb-ico i-archive-next" />
+              </button>
+            </div>
+          )}
           <span className="vb-title" title={archive.fileName}>
             {archive.title || archive.fileName}
           </span>
