@@ -66,7 +66,10 @@ export class ImagesController {
       return;
     }
     res.setHeader('Content-Type', img.contentType);
-    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    // immutable 은 쓰지 않는다 — 재압축으로 archiveId/page index 의 매핑이 바뀌면
+    // 같은 URL 에 다른 콘텐츠가 매달리므로, 브라우저가 ETag 로 재검증할 수 있어야 한다.
+    // ETag 는 콘텐츠 해시 기반이라 미변경 시 304 로 가볍게 빠진다.
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
     res.setHeader('ETag', img.etag);
     res.end(img.buffer);
   }

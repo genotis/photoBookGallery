@@ -72,7 +72,9 @@
 | GET | `/api/archives/:id/page-by-entry?name=&size=` | 엔트리명 직접 지정 |
 
 - `size=thumb`: 작은 WebP(그리드), `preview`: 화면맞춤 리사이즈, `full`: 원본.
-- 응답에 `ETag`(엔트리 해시) + 장기 `Cache-Control`로 프리로딩 효율화.
+- 응답에 `ETag`(콘텐츠해시:엔트리명:사이즈 기반) + `Cache-Control: private, max-age=0, must-revalidate`.
+  재압축으로 같은 URL(`page/<index>`) 의 매핑이 바뀌어도 ETag 가 달라져 304 ↔ 200 으로
+  정확히 동작. `immutable` 은 쓰지 않는다(브라우저가 재검증을 생략해 옛 페이지가 남는다).
 
 ## 5. 편집 (삭제 + 재압축)
 | 메서드 | 경로 | 설명 |
