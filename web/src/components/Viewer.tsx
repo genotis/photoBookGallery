@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -238,105 +237,12 @@ export function Viewer({
     child?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [index]);
 
-  // 썸네일 스트립 매그니피케이션 (macOS Dock 스타일)
-  //
-  // 핵심 설계: 기준 좌표(untransformed offsetLeft) 를 마운트/사진집 변경 시
-  // 한 번만 측정해 캐시한다. 매 프레임 transform 만 갱신하니 layout 변화가 없고,
-  // 캐시된 centers 로 거리 계산이 흔들리지 않아 인접 썸네일 사이 gap 이 정확히 유지됨.
-  const magnifyRafRef = useRef<number | null>(null);
-  const baseCentersRef = useRef<number[] | null>(null);
-  const baseWidthRef = useRef<number>(0);
-
-  // 사진집/총 페이지 수가 바뀌면 기준 좌표 재측정
-  useLayoutEffect(() => {
-    const inner = thumbsRef.current;
-    if (!inner) return;
-    // 기존 transform 제거 후 깨끗한 layout 측정
-    const N = inner.children.length;
-    for (let j = 0; j < N; j++) {
-      (inner.children[j] as HTMLElement).style.transform = '';
-    }
-    // 강제 reflow 후 측정
-    void inner.offsetWidth;
-    const centers: number[] = [];
-    for (let j = 0; j < N; j++) {
-      const el = inner.children[j] as HTMLElement;
-      centers.push(el.offsetLeft + el.offsetWidth / 2);
-    }
-    baseCentersRef.current = centers;
-    baseWidthRef.current = N > 0 ? (inner.children[0] as HTMLElement).offsetWidth : 0;
-  }, [archive.id, total]);
-
-  const onThumbsMouseMove = useCallback((e: React.MouseEvent) => {
-    const inner = thumbsRef.current;
-    const centers = baseCentersRef.current;
-    const baseW = baseWidthRef.current;
-    if (!inner || !centers || baseW === 0) return;
-    const mouseX = e.clientX;
-    if (magnifyRafRef.current !== null) return;
-    magnifyRafRef.current = requestAnimationFrame(() => {
-      magnifyRafRef.current = null;
-      const N = centers.length;
-      if (inner.children.length !== N) return; // 캐시 stale 보호
-
-      const innerRect = inner.getBoundingClientRect();
-      const mouseInInner = mouseX - innerRect.left + inner.scrollLeft;
-
-      const RADIUS = 160;
-      const MAX_SCALE = 1.5;
-      // 안전 마진: 부동소수점 오차와 sub-pixel 렌더링으로 인한 0.5~1px 겹침을 차단
-      const SAFETY_PX = 1;
-
-      // 1) scale + cursorIdx (캐시된 centers 사용 → 안정적)
-      const scales = new Array<number>(N);
-      let cursorIdx = 0;
-      let cursorDist = Infinity;
-      for (let j = 0; j < N; j++) {
-        const d = Math.abs(mouseInInner - centers[j]);
-        if (d < cursorDist) {
-          cursorDist = d;
-          cursorIdx = j;
-        }
-        const t = Math.max(0, 1 - d / RADIUS);
-        const eased = t * t * (3 - 2 * t);
-        scales[j] = 1 + (MAX_SCALE - 1) * eased;
-      }
-
-      // 2) 누적 translateX: 인접 두 썸네일의 (scale-1)*W/2 합 + 안전 마진 만큼 떨어뜨림
-      const halfExtras = new Array<number>(N);
-      for (let j = 0; j < N; j++) halfExtras[j] = ((scales[j] - 1) * baseW) / 2;
-      const translates = new Array<number>(N).fill(0);
-      for (let i = cursorIdx + 1; i < N; i++) {
-        translates[i] =
-          translates[i - 1] + halfExtras[i - 1] + halfExtras[i] + SAFETY_PX;
-      }
-      for (let i = cursorIdx - 1; i >= 0; i--) {
-        translates[i] =
-          translates[i + 1] - halfExtras[i + 1] - halfExtras[i] - SAFETY_PX;
-      }
-
-      for (let j = 0; j < N; j++) {
-        const el = inner.children[j] as HTMLElement;
-        el.style.transform = `translate3d(${translates[j].toFixed(2)}px, 0, 0) scale(${scales[j].toFixed(3)})`;
-        el.style.zIndex = scales[j] > 1.05 ? '2' : '';
-      }
-    });
-  }, []);
-  const clearMagnify = useCallback(() => {
-    if (magnifyRafRef.current !== null) {
-      cancelAnimationFrame(magnifyRafRef.current);
-      magnifyRafRef.current = null;
-    }
-    const inner = thumbsRef.current;
-    if (!inner) return;
-    const children = inner.children;
-    for (let j = 0; j < children.length; j++) {
-      const el = children[j] as HTMLElement;
-      el.style.transform = '';
-      el.style.zIndex = '';
-    }
-  }, []);
-  useEffect(() => clearMagnify, [clearMagnify]);
+  // 썸네일 hover 효과는 CSS 만으로 처리 (.thumb:hover).
+  // 누적 translateX 기반 dock 매그니피케이션은 부동소수점/sub-pixel 오차로
+  // 인접 썸네일 사이 미세 겹침이 반복되어, 순수 CSS layout 으로 회귀했다:
+  //   - hovered thumb 은 scale + 좌우 margin 으로 자체 공간 확보
+  //   - flex layout 이 spacing 을 강제 → 절대 겹치지 않음
+  //   - transition 이 부드럽게 보간
 
   // 보기 모드가 바뀌면 현재 index 위치로 스크롤 동기화 (한 번만)
   const indexRef = useRef(index);
@@ -779,13 +685,7 @@ export function Viewer({
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="thumbs-inner"
-            ref={thumbsRef}
-            dir={dir}
-            onMouseMove={onThumbsMouseMove}
-            onMouseLeave={clearMagnify}
-          >
+          <div className="thumbs-inner" ref={thumbsRef} dir={dir}>
             {Array.from({ length: total }, (_, i) => (
               <button
                 key={i}

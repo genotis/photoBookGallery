@@ -552,7 +552,6 @@ select {
 }
 .thumb {
   flex: 0 0 auto;
-  /* 기본 크기 */
   width: 36px;
   height: 48px;
   padding: 0;
@@ -562,20 +561,27 @@ select {
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  /* 매그니피케이션: 마우스가 가까워지면 위쪽으로 커지고, translateX 로 옆으로 밀린다. */
+  /* 가운데 아래로 자라도록 — 마우스로 향하지 않고 위쪽으로 솟음 */
   transform-origin: center bottom;
-  /* 짧은 transition 으로 rAF 간 미세한 jitter 흡수 — 너무 길면 중간 상태에서
-     인접 썸네일이 겹친다. 매 프레임 target 까지 30ms 안에 도달. */
-  transition: border-color 0.12s, transform 0.03s linear;
-  will-change: transform;
+  transition: transform 0.15s ease-out, margin 0.15s ease-out,
+    border-color 0.12s;
 }
+/* hover 시 자기 자신을 1.5배로 키우고, 좌우 margin 으로 자체 공간을 확보.
+   flex layout 이 인접 항목을 그만큼 밀어내므로 겹침이 절대 발생하지 않음.
+   margin = 9px = (1.5-1) * 36 / 2 (scale 의 한쪽 확장량). */
 .thumb:hover {
-  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.5);
+  margin: 0 10px;
+  border-color: rgba(255, 255, 255, 0.45);
+  z-index: 2;
 }
 .thumb.on {
   border-color: #3b82f6;
-  /* 매그니피케이션 비활성 시 약한 강조. JS inline transform 이 덮어씀. */
   transform: scale(1.08);
+}
+/* 선택된 thumb 위에 hover 시에도 1.5배가 우선 */
+.thumb.on:hover {
+  transform: scale(1.5);
 }
 .thumb-num {
   font-size: 0.58rem;
