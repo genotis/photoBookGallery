@@ -207,7 +207,8 @@ export function Viewer({
     child?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [index]);
 
-  // 썸네일 스트립 매그니피케이션 — 마우스 X 위치 기준으로 가까운 썸네일이 커진다.
+  // 썸네일 스트립 매그니피케이션 — 마우스 X 위치 기준으로 가까운 썸네일이 커지고,
+  // 주변 썸네일은 macOS Dock 처럼 옆으로 밀려난다 (누적 translateX).
   // 터치 환경에서는 마우스 이벤트가 없으니 자연히 무효.
   const magnifyRafRef = useRef<number | null>(null);
   const onThumbsMouseMove = useCallback((e: React.MouseEvent) => {
@@ -217,19 +218,47 @@ export function Viewer({
     if (magnifyRafRef.current !== null) return;
     magnifyRafRef.current = requestAnimationFrame(() => {
       magnifyRafRef.current = null;
-      const children = inner.children;
-      const RADIUS = 140;
-      const MAX_SCALE = 1.65;
-      for (let j = 0; j < children.length; j++) {
-        const el = children[j] as HTMLElement;
+      const N = inner.children.length;
+      if (N === 0) return;
+
+      const RADIUS = 160;
+      const MAX_SCALE = 1.8;
+      // 인라인 transform 영향 없는 layout width
+      const baseW = (inner.children[0] as HTMLElement).offsetWidth;
+
+      // 1) 각 썸네일의 스케일 + 가장 가까운 인덱스
+      const scales = new Array<number>(N);
+      let cursorIdx = 0;
+      let cursorDist = Infinity;
+      for (let j = 0; j < N; j++) {
+        const el = inner.children[j] as HTMLElement;
         const r = el.getBoundingClientRect();
-        const center = r.left + r.width / 2;
-        const d = Math.abs(mouseX - center);
+        const c = r.left + r.width / 2;
+        const d = Math.abs(mouseX - c);
+        if (d < cursorDist) {
+          cursorDist = d;
+          cursorIdx = j;
+        }
         const t = Math.max(0, 1 - d / RADIUS);
-        const eased = t * t * (3 - 2 * t); // smoothstep
-        const scale = 1 + (MAX_SCALE - 1) * eased;
-        el.style.transform = `scale(${scale.toFixed(3)})`;
-        el.style.zIndex = eased > 0.05 ? '2' : '';
+        const eased = t * t * (3 - 2 * t);
+        scales[j] = 1 + (MAX_SCALE - 1) * eased;
+      }
+
+      // 2) 누적 translateX — 커서 썸네일은 제자리, 양쪽으로 밀려남
+      const halfExtras = scales.map((s) => ((s - 1) * baseW) / 2);
+      const translates = new Array<number>(N).fill(0);
+      for (let i = cursorIdx + 1; i < N; i++) {
+        translates[i] = translates[i - 1] + halfExtras[i - 1] + halfExtras[i];
+      }
+      for (let i = cursorIdx - 1; i >= 0; i--) {
+        translates[i] = translates[i + 1] - halfExtras[i + 1] - halfExtras[i];
+      }
+
+      // 3) DOM 적용
+      for (let j = 0; j < N; j++) {
+        const el = inner.children[j] as HTMLElement;
+        el.style.transform = `translateX(${translates[j].toFixed(2)}px) scale(${scales[j].toFixed(3)})`;
+        el.style.zIndex = scales[j] > 1.05 ? '2' : '';
       }
     });
   }, []);

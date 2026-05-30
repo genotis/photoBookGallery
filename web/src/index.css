@@ -501,22 +501,25 @@ select {
   display: none;
 }
 
-/* ---- 하단 썸네일 네비게이션 ---- */
+/* ---- 하단 썸네일 네비게이션 (dock-style 매그니피케이션) ---- */
 .viewer-thumbs {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 10;
+  /* 매그니피케이션 시 위로 자라는 영역까지 포함한 높이. 위쪽은 점진적으로
+     투명한 그라데이션이라 비활성 시 시각적 부담이 적다. */
   background: linear-gradient(
     to top,
     rgba(14, 16, 20, 0.92) 0%,
-    rgba(14, 16, 20, 0.7) 60%,
+    rgba(14, 16, 20, 0.7) 35%,
+    rgba(14, 16, 20, 0.25) 65%,
     rgba(14, 16, 20, 0) 100%
   );
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 14px calc(0.6rem + var(--sa-right)) calc(8px + var(--sa-bottom))
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 0 calc(0.6rem + var(--sa-right)) calc(8px + var(--sa-bottom))
     calc(0.6rem + var(--sa-left));
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
@@ -528,12 +531,14 @@ select {
 .thumbs-inner {
   display: flex;
   flex-wrap: nowrap;
+  align-items: flex-end; /* 썸네일이 바닥에 붙음 — 위쪽 공간은 자라기용 */
   gap: 4px;
+  /* 기본 48px + max 1.8 scale = ~86px. 약간 여유. */
+  height: 92px;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-  /* 스크롤바 최소화 */
   scrollbar-width: thin;
 }
 .thumbs-inner::-webkit-scrollbar {
@@ -545,26 +550,35 @@ select {
 }
 .thumb {
   flex: 0 0 auto;
-  width: 56px;
-  height: 76px;
+  /* 기본 크기 축소 */
+  width: 36px;
+  height: 48px;
   padding: 0;
   border: 2px solid transparent;
-  border-radius: 6px;
+  border-radius: 5px;
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  /* dock-style 매그니피케이션: 마우스가 가까워지면 위쪽으로 커진다. */
+  /* 매그니피케이션: 마우스가 가까워지면 위쪽으로 커지고, 옆 썸네일은 옆으로 밀린다. */
   transform-origin: center bottom;
-  transition: border-color 0.12s, transform 0.08s ease-out;
+  transition: border-color 0.12s, transform 0.07s ease-out;
+  /* GPU 합성으로 부드럽게 */
+  will-change: transform;
 }
 .thumb:hover {
   border-color: rgba(255, 255, 255, 0.3);
 }
 .thumb.on {
   border-color: #3b82f6;
-  /* hover 매그니피케이션이 없을 때만 적용. JS 가 inline transform 으로 덮어씀. */
-  transform: scale(1.05);
+  /* 매그니피케이션 비활성 시 약한 강조. JS inline transform 이 덮어씀. */
+  transform: scale(1.08);
+}
+.thumb-num {
+  font-size: 0.58rem;
+  padding: 0.05rem 0.25rem;
+  bottom: 1px;
+  left: 1px;
 }
 .thumb img {
   width: 100%;
@@ -649,12 +663,25 @@ select {
 
 /* 좁은 화면에서는 썸네일 살짝 작게 */
 @media (max-width: 720px) {
+  /* 모바일은 매그니피케이션이 없으니(터치) 탭하기 충분한 크기 유지 */
   .thumb {
-    width: 48px;
-    height: 64px;
+    width: 44px;
+    height: 60px;
   }
-  .viewer-thumbs {
-    padding-top: 10px;
+  .thumbs-inner {
+    height: 64px;
+    align-items: stretch;
+  }
+}
+/* 터치 디바이스도 매그니피케이션 비활성 → inner 높이 축소 + 정렬 변경 */
+@media (hover: none) and (pointer: coarse) {
+  .thumbs-inner {
+    height: auto;
+    align-items: stretch;
+  }
+  .thumb {
+    width: 44px;
+    height: 60px;
   }
 }
 .viewer-single {
