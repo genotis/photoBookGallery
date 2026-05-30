@@ -43,15 +43,37 @@ export function ViewerBehaviorPanel() {
         좌/우 탭으로 페이지 넘김 (단일 보기에서 화면 좌·우 1/3 영역을 탭하면 이전/다음 페이지로 이동)
       </label>
 
+      <div className="behavior-field">
+        <label className="behavior-label" htmlFor="ss-int">
+          슬라이드쇼 간격 — <strong>{b.slideshowSec}초</strong>
+        </label>
+        <input
+          id="ss-int"
+          type="range"
+          min={1}
+          max={60}
+          step={1}
+          value={b.slideshowSec}
+          onChange={(e) => update({ slideshowSec: Number(e.target.value) })}
+          aria-label="슬라이드쇼 간격(초)"
+        />
+        <span className="muted small">
+          뷰어 상단바의 ▶ 버튼으로 슬라이드쇼 시작. 마지막 페이지에서 자동 정지.
+        </span>
+      </div>
+
       <div className="behavior-status">
         현재 적용된 값:{' '}
         <code>
-          tapNav={String(b.tapNav)}, reveal={b.reveal}
+          tapNav={String(b.tapNav)}, reveal={b.reveal}, slideshow=
+          {b.slideshowSec}s
         </code>
         <button
           type="button"
           className="ghost"
-          onClick={() => update({ reveal: 'both', tapNav: true })}
+          onClick={() =>
+            update({ reveal: 'both', tapNav: true, slideshowSec: 5 })
+          }
           title="기본값으로 되돌림"
         >
           기본값

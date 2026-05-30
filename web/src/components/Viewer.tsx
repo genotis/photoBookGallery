@@ -323,6 +323,26 @@ export function Viewer({
     [go],
   );
 
+  // 슬라이드쇼 — 설정 간격마다 다음 페이지로 자동 진행. 마지막 페이지에서 자동 정지.
+  const [slideshow, setSlideshow] = useState(false);
+  useEffect(() => {
+    if (!slideshow || total === 0) return;
+    const ms = Math.max(1, behavior.slideshowSec) * 1000;
+    const timer = window.setTimeout(() => {
+      if (index < total - 1) {
+        navTo(index + 1);
+      } else {
+        setSlideshow(false);
+      }
+    }, ms);
+    return () => window.clearTimeout(timer);
+  }, [slideshow, index, total, behavior.slideshowSec, navTo]);
+  // 사진집/뷰가 바뀌면 슬라이드쇼 자동 종료
+  useEffect(() => {
+    setSlideshow(false);
+  }, [archive.id]);
+  const toggleSlideshow = () => setSlideshow((v) => !v);
+
   // 전체화면 토글 (Fullscreen API). iPad Safari 는 미지원 — 홈화면 추가 PWA 가 대안.
   const [isFs, setIsFs] = useState(
     typeof document !== 'undefined' && !!document.fullscreenElement,
@@ -605,6 +625,21 @@ export function Viewer({
               </>
             ) : (
               <>
+                <button
+                  className={`vb-action vb-slideshow ${slideshow ? 'on' : ''}`}
+                  onClick={toggleSlideshow}
+                  title={
+                    slideshow
+                      ? '슬라이드쇼 정지'
+                      : `슬라이드쇼 시작 (${behavior.slideshowSec}초 간격)`
+                  }
+                  aria-label={slideshow ? '슬라이드쇼 정지' : '슬라이드쇼 시작'}
+                  disabled={total < 2}
+                >
+                  <span
+                    className={`vb-ico ${slideshow ? 'i-pause' : 'i-play'}`}
+                  />
+                </button>
                 {onEdit && (
                   <button className="vb-action" onClick={onEdit} title="메타 편집">
                     메타

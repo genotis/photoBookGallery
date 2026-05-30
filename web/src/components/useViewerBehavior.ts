@@ -7,6 +7,8 @@ export interface ViewerBehavior {
   reveal: RevealMode;
   /** 단일 보기 모드에서 좌/우 1/3 영역 탭으로 페이지 넘김 활성 */
   tapNav: boolean;
+  /** 슬라이드쇼 자동 진행 간격 (초). 1~60 범위. */
+  slideshowSec: number;
 }
 
 const STORAGE_KEY = 'pbg.viewerBehavior.v1';
@@ -14,6 +16,7 @@ const STORAGE_KEY = 'pbg.viewerBehavior.v1';
 const DEFAULT: ViewerBehavior = {
   reveal: 'both',
   tapNav: true,
+  slideshowSec: 5,
 };
 
 function load(): ViewerBehavior {
@@ -28,6 +31,10 @@ function load(): ViewerBehavior {
           ? v.reveal
           : DEFAULT.reveal,
       tapNav: typeof v.tapNav === 'boolean' ? v.tapNav : DEFAULT.tapNav,
+      slideshowSec:
+        typeof v.slideshowSec === 'number' && v.slideshowSec >= 1 && v.slideshowSec <= 60
+          ? Math.round(v.slideshowSec)
+          : DEFAULT.slideshowSec,
     };
   } catch {
     return DEFAULT;

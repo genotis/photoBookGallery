@@ -493,6 +493,23 @@ select {
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M13 3 V13 M2 3 L9 8 L2 13 Z' fill='%23000' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M13 3 V13 M2 3 L9 8 L2 13 Z' fill='%23000' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
+/* 슬라이드쇼 재생/정지 */
+.i-play {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 2.5 L13 8 L4 13.5 Z' fill='%23000' stroke='%23000' stroke-width='1' stroke-linejoin='round'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 2.5 L13 8 L4 13.5 Z' fill='%23000' stroke='%23000' stroke-width='1' stroke-linejoin='round'/></svg>");
+}
+.i-pause {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='3.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/><rect x='9.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='3.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/><rect x='9.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/></svg>");
+}
+/* 슬라이드쇼 활성 시 강조 */
+.vb-slideshow.on {
+  background: #3b82f6 !important;
+  color: #fff !important;
+}
+.vb-slideshow.on:hover:not(:disabled) {
+  background: #4d8df8 !important;
+}
 
 /* ---- 구 viewer-tools / viewer-title 호환 (남은 곳 없으면 제거 가능) ---- */
 .viewer-title,
