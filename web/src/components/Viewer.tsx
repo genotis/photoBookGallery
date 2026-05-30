@@ -586,9 +586,7 @@ export function Viewer({
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index >= total - 1 : index === 0}
             aria-label="이전 페이지"
-          >
-            ‹
-          </button>
+          />
           {total > 0 ? (
             <div
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
@@ -615,9 +613,7 @@ export function Viewer({
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index === 0 : index >= total - 1}
             aria-label="다음 페이지"
-          >
-            ›
-          </button>
+          />
         </div>
       ) : view === 'scroll-v' ? (
         <div
@@ -659,9 +655,7 @@ export function Viewer({
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index >= total - 1 : index === 0}
             aria-label="이전 페이지"
-          >
-            ‹
-          </button>
+          />
           <div
             ref={scrollHRef}
             className="viewer-scroll-h"
@@ -696,9 +690,7 @@ export function Viewer({
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={dir === 'rtl' ? index === 0 : index >= total - 1}
             aria-label="다음 페이지"
-          >
-            ›
-          </button>
+          />
         </div>
       )}
 
