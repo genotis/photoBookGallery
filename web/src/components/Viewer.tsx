@@ -207,6 +207,48 @@ export function Viewer({
     child?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [index]);
 
+  // 썸네일 스트립 매그니피케이션 — 마우스 X 위치 기준으로 가까운 썸네일이 커진다.
+  // 터치 환경에서는 마우스 이벤트가 없으니 자연히 무효.
+  const magnifyRafRef = useRef<number | null>(null);
+  const onThumbsMouseMove = useCallback((e: React.MouseEvent) => {
+    const inner = thumbsRef.current;
+    if (!inner) return;
+    const mouseX = e.clientX;
+    if (magnifyRafRef.current !== null) return;
+    magnifyRafRef.current = requestAnimationFrame(() => {
+      magnifyRafRef.current = null;
+      const children = inner.children;
+      const RADIUS = 140;
+      const MAX_SCALE = 1.65;
+      for (let j = 0; j < children.length; j++) {
+        const el = children[j] as HTMLElement;
+        const r = el.getBoundingClientRect();
+        const center = r.left + r.width / 2;
+        const d = Math.abs(mouseX - center);
+        const t = Math.max(0, 1 - d / RADIUS);
+        const eased = t * t * (3 - 2 * t); // smoothstep
+        const scale = 1 + (MAX_SCALE - 1) * eased;
+        el.style.transform = `scale(${scale.toFixed(3)})`;
+        el.style.zIndex = eased > 0.05 ? '2' : '';
+      }
+    });
+  }, []);
+  const clearMagnify = useCallback(() => {
+    if (magnifyRafRef.current !== null) {
+      cancelAnimationFrame(magnifyRafRef.current);
+      magnifyRafRef.current = null;
+    }
+    const inner = thumbsRef.current;
+    if (!inner) return;
+    const children = inner.children;
+    for (let j = 0; j < children.length; j++) {
+      const el = children[j] as HTMLElement;
+      el.style.transform = '';
+      el.style.zIndex = '';
+    }
+  }, []);
+  useEffect(() => clearMagnify, [clearMagnify]);
+
   // 보기 모드가 바뀌면 현재 index 위치로 스크롤 동기화 (한 번만)
   const indexRef = useRef(index);
   indexRef.current = index;
@@ -648,7 +690,13 @@ export function Viewer({
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <div className="thumbs-inner" ref={thumbsRef} dir={dir}>
+          <div
+            className="thumbs-inner"
+            ref={thumbsRef}
+            dir={dir}
+            onMouseMove={onThumbsMouseMove}
+            onMouseLeave={clearMagnify}
+          >
             {Array.from({ length: total }, (_, i) => (
               <button
                 key={i}

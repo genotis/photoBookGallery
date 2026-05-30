@@ -554,13 +554,16 @@ select {
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  transition: border-color 0.12s, transform 0.12s;
+  /* dock-style 매그니피케이션: 마우스가 가까워지면 위쪽으로 커진다. */
+  transform-origin: center bottom;
+  transition: border-color 0.12s, transform 0.08s ease-out;
 }
 .thumb:hover {
   border-color: rgba(255, 255, 255, 0.3);
 }
 .thumb.on {
   border-color: #3b82f6;
+  /* hover 매그니피케이션이 없을 때만 적용. JS 가 inline transform 으로 덮어씀. */
   transform: scale(1.05);
 }
 .thumb img {
