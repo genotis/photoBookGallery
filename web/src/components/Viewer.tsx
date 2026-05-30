@@ -268,6 +268,16 @@ export function Viewer({
     };
   }, [revealBar]);
 
+  /**
+   * 중앙 이미지 영역 더블클릭 → 상단바 + 하단 썸네일 네비를 토글.
+   * 선택 모드에서는 카드 더블클릭이 selection toggle 과 충돌하므로 비활성.
+   */
+  const toggleBarManual = useCallback(() => {
+    if (selectMode) return;
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    setBarVisible((v) => !v);
+  }, [selectMode]);
+
   // ---- 재압축 ----
   const [activeJob, setActiveJob] = useState<number | null>(null);
   const repack = useMutation({
@@ -326,6 +336,7 @@ export function Viewer({
       <header
         className={`viewer-bar ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
         onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
       >
         <div className="vb-left">
           <button className="vb-icon vb-close" onClick={onClose} title="닫기 (Esc)">
@@ -465,6 +476,7 @@ export function Viewer({
         <div
           className="viewer-single"
           onClick={(e) => e.stopPropagation()}
+          onDoubleClick={toggleBarManual}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
         >
@@ -506,7 +518,12 @@ export function Viewer({
           </button>
         </div>
       ) : view === 'scroll-v' ? (
-        <div ref={scrollVRef} className="viewer-scroll-v" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={scrollVRef}
+          className="viewer-scroll-v"
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={toggleBarManual}
+        >
           {Array.from({ length: total }, (_, i) => (
             <div
               key={i}
@@ -534,6 +551,7 @@ export function Viewer({
           className="viewer-scroll-h"
           dir={dir}
           onClick={(e) => e.stopPropagation()}
+          onDoubleClick={toggleBarManual}
         >
           {Array.from({ length: total }, (_, i) => (
             <div
@@ -563,6 +581,7 @@ export function Viewer({
         <nav
           className={`viewer-thumbs ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
           onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
           <div className="thumbs-inner" ref={thumbsRef} dir={dir}>
             {Array.from({ length: total }, (_, i) => (
