@@ -530,12 +530,6 @@ export function Viewer({
               </button>
             </div>
           )}
-          <span className="vb-title" title={archive.fileName}>
-            {archive.title || archive.fileName}
-          </span>
-        </div>
-
-        <div className="vb-center">
           {!selectMode && total > 0 && (
             <span className="vb-page">
               <strong>{index + 1}</strong>
@@ -657,6 +651,24 @@ export function Viewer({
           </div>
         </div>
       </header>
+
+      <div
+        className={`viewer-subtitle ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <span className="vs-text" title={archive.fileName}>
+          <span className="vs-title">{archive.title || archive.fileName}</span>
+          {archive.models.length > 0 && (
+            <>
+              <span className="vs-sep">·</span>
+              <span className="vs-models">
+                {archive.models.map((m) => m.name).join(', ')}
+              </span>
+            </>
+          )}
+        </span>
+      </div>
 
       {repackPending && (
         <div className="repack-progress">

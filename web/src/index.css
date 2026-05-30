@@ -261,14 +261,16 @@ select {
   flex-direction: column;
 }
 
-/* 상단 바: 화면 위에 떠있는 반투명 글래스. 자동 숨김 가능. */
+/* 상단 바: 화면 위에 떠있는 반투명 글래스. 자동 숨김 가능.
+   2-컬럼 flex — 좌측은 가변 폭(타이틀이 ellipsis), 우측은 컨트롤 묶음 고정 폭.
+   페이지 인디케이터는 좌측 그룹 안 타이틀 옆에 표시되어 우측과 겹치지 않음. */
 .viewer-bar {
   position: absolute;
   inset: 0 0 auto 0;
   z-index: 10;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1rem;
   padding: 0.55rem 0.9rem;
   background: linear-gradient(
@@ -281,32 +283,68 @@ select {
   -webkit-backdrop-filter: blur(10px);
 }
 .vb-left {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-width: 0;
-}
-.vb-center {
-  display: flex;
-  justify-content: center;
+  overflow: hidden;
 }
 .vb-right {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 0.6rem;
 }
-.vb-title {
-  font-size: 0.82rem;
-  color: #d6dae0;
+/* 사진집 제목 — 툴바 바로 아래 가운데. 툴바 컨트롤과 절대 겹치지 않음.
+   배경 칩만 가운데에 두고 좌우 클릭(탭 네비) 영역은 보존. */
+.viewer-subtitle {
+  position: absolute;
+  top: 3.1rem;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 0.9rem;
+  transition: opacity 200ms ease;
+}
+.viewer-subtitle.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.viewer-subtitle .vs-text {
+  pointer-events: auto;
+  max-width: min(80vw, 720px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.85rem;
+  color: #d6dae0;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(14, 16, 20, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.viewer-subtitle .vs-title {
+  color: #fff;
+}
+.viewer-subtitle .vs-sep {
+  margin: 0 0.4rem;
+  color: rgba(214, 218, 224, 0.4);
+}
+.viewer-subtitle .vs-models {
+  color: #b8c0cc;
 }
 
-/* 페이지 인디케이터 — 큰 현재 페이지 + 작은 총 페이지 */
+/* 페이지 인디케이터 — 큰 현재 페이지 + 작은 총 페이지.
+   타이틀이 줄어들어도 자기 크기는 유지(우측 컨트롤과 겹치지 않도록 vb-left 안 고정폭). */
 .vb-page {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: baseline;
   gap: 0.15rem;
   font-feature-settings: 'tnum';
@@ -1696,10 +1734,10 @@ ul.tree ul {
     padding: 0.3rem 0.4rem;
   }
   .viewer-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.5rem;
   }
-  .vb-center {
-    display: none;
+  .viewer-subtitle .vs-text {
+    max-width: 88vw;
+    font-size: 0.78rem;
   }
 }
