@@ -334,6 +334,9 @@ export function Viewer({
       className={`viewer view-${view} fit-${fit} dir-${dir} ${
         behavior.tapNav ? 'tap-nav' : ''
       }`}
+      // DevTools 에서 현재 동작 설정 확인용
+      data-tap-nav={behavior.tapNav}
+      data-reveal={behavior.reveal}
       onClick={onClose}
       onMouseMove={
         behavior.reveal === 'motion' || behavior.reveal === 'both'

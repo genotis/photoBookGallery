@@ -613,6 +613,27 @@ select {
   margin-top: 0.15rem;
   flex-shrink: 0;
 }
+.behavior-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  background: #14161a;
+  border: 1px solid #2a2e35;
+  border-radius: 8px;
+  font-size: 0.74rem;
+  color: #aeb4bd;
+}
+.behavior-status code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: #d6dae0;
+}
+.behavior-status .ghost {
+  font-size: 0.74rem;
+  padding: 0.25rem 0.6rem;
+}
 
 /* 좁은 화면에서는 썸네일 살짝 작게 */
 @media (max-width: 720px) {
@@ -655,13 +676,27 @@ select {
 /* tap-nav: 좌/우 1/3 영역을 탭으로 페이지 이동. 중앙 1/3 은 더블탭 UI 토글용. */
 .viewer.tap-nav .viewer-single .nav {
   width: 33.34%;
+  /* 영역이 어디인지 보이도록 옅은 그라데이션 */
+  background: linear-gradient(
+    to var(--nav-grad, right),
+    rgba(255, 255, 255, 0.04),
+    transparent
+  );
 }
-/* tap-nav 켜져있으면 영역을 인지할 수 있도록 옅게라도 항상 표시 */
+/* tap-nav 켜져있으면 화살표를 옅게라도 항상 노출 */
 .viewer.tap-nav .viewer-single .nav:not(:disabled) {
-  opacity: 0.18;
+  opacity: 0.35;
+}
+.viewer.tap-nav .viewer-single .nav:active:not(:disabled) {
+  opacity: 1 !important;
+  background: linear-gradient(
+    to var(--nav-grad, right),
+    rgba(255, 255, 255, 0.18),
+    transparent
+  ) !important;
 }
 .viewer.tap-nav .viewer-single:hover .nav:not(:disabled) {
-  opacity: 0.5;
+  opacity: 0.6;
 }
 .viewer-single:hover .nav:not(:disabled) {
   opacity: 0.35;

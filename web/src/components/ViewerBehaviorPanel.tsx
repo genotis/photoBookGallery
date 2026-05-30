@@ -42,6 +42,21 @@ export function ViewerBehaviorPanel() {
         />
         좌/우 탭으로 페이지 넘김 (단일 보기에서 화면 좌·우 1/3 영역을 탭하면 이전/다음 페이지로 이동)
       </label>
+
+      <div className="behavior-status">
+        현재 적용된 값:{' '}
+        <code>
+          tapNav={String(b.tapNav)}, reveal={b.reveal}
+        </code>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => update({ reveal: 'both', tapNav: true })}
+          title="기본값으로 되돌림"
+        >
+          기본값
+        </button>
+      </div>
     </section>
   );
 }
