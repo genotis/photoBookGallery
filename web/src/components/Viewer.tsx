@@ -190,7 +190,7 @@ export function Viewer({
     return () => window.removeEventListener('keydown', onKey);
   }, [dir, go, index, view, onClose, selectMode, toggle, hasPrev, hasNext, onNavigateArchive]);
 
-  // 프리로딩 (단일/가로 모드)
+  // 프리로딩 (단일/가로 모드) — 인접 페이지 즉시
   useEffect(() => {
     if (view === 'scroll-v') return;
     [index + 1, index + 2, index - 1].forEach((i) => {
@@ -201,6 +201,30 @@ export function Viewer({
     });
   }, [archive.id, index, view, total]);
 
+  // 사진집이 열리면 전체 페이지를 순서대로 백그라운드 캐시에 채운다.
+  // 한 페이지 로드 완료 후 다음 시작 — 동시 요청을 1개로 제한해 첫 페이지의
+  // 즉시성을 보장 + 네트워크/서버 부담 분산.
+  useEffect(() => {
+    if (total === 0) return;
+    let cancelled = false;
+    let cur = 0;
+    const next = () => {
+      if (cancelled || cur >= total) return;
+      const i = cur++;
+      const img = new Image();
+      const done = () => {
+        if (!cancelled) next();
+      };
+      img.onload = done;
+      img.onerror = done;
+      img.src = pageUrl(archive.id, i);
+    };
+    next();
+    return () => {
+      cancelled = true;
+    };
+  }, [archive.id, total]);
+
   // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
   useEffect(() => {
     const child = thumbsRef.current?.children[index] as HTMLElement | undefined;
@@ -209,7 +233,9 @@ export function Viewer({
 
   // 썸네일 스트립 매그니피케이션 — 마우스 X 위치 기준으로 가까운 썸네일이 커지고,
   // 주변 썸네일은 macOS Dock 처럼 옆으로 밀려난다 (누적 translateX).
-  // 터치 환경에서는 마우스 이벤트가 없으니 자연히 무효.
+  // 핵심: getBoundingClientRect 는 현재 transform 의 영향을 받아 프레임마다 드리프트가
+  // 누적된다. 그래서 transform 에 영향 없는 layout 기준값(offsetLeft/offsetWidth)으로
+  // 안정된 좌표를 사용한다.
   const magnifyRafRef = useRef<number | null>(null);
   const onThumbsMouseMove = useCallback((e: React.MouseEvent) => {
     const inner = thumbsRef.current;
@@ -223,18 +249,20 @@ export function Viewer({
 
       const RADIUS = 160;
       const MAX_SCALE = 1.8;
-      // 인라인 transform 영향 없는 layout width
       const baseW = (inner.children[0] as HTMLElement).offsetWidth;
+      // inner 는 transform 안 받음 → viewport 위치 안정. scrollLeft 변동만 있음.
+      const innerRect = inner.getBoundingClientRect();
+      const scrollLeft = inner.scrollLeft;
 
-      // 1) 각 썸네일의 스케일 + 가장 가까운 인덱스
+      // 1) 각 썸네일의 untransformed viewport 중심 + scale 계산
       const scales = new Array<number>(N);
       let cursorIdx = 0;
       let cursorDist = Infinity;
       for (let j = 0; j < N; j++) {
         const el = inner.children[j] as HTMLElement;
-        const r = el.getBoundingClientRect();
-        const c = r.left + r.width / 2;
-        const d = Math.abs(mouseX - c);
+        const layoutCenter = el.offsetLeft + el.offsetWidth / 2;
+        const viewportCenter = innerRect.left + layoutCenter - scrollLeft;
+        const d = Math.abs(mouseX - viewportCenter);
         if (d < cursorDist) {
           cursorDist = d;
           cursorIdx = j;
@@ -244,7 +272,8 @@ export function Viewer({
         scales[j] = 1 + (MAX_SCALE - 1) * eased;
       }
 
-      // 2) 누적 translateX — 커서 썸네일은 제자리, 양쪽으로 밀려남
+      // 2) 누적 translateX — 커서 썸네일은 제자리, 양쪽으로 밀려남.
+      //    인접 두 썸네일의 (scale-1)*W/2 합만큼 떨어뜨리면 원래 gap 이 그대로 유지된다.
       const halfExtras = scales.map((s) => ((s - 1) * baseW) / 2);
       const translates = new Array<number>(N).fill(0);
       for (let i = cursorIdx + 1; i < N; i++) {
@@ -254,7 +283,6 @@ export function Viewer({
         translates[i] = translates[i + 1] - halfExtras[i + 1] - halfExtras[i];
       }
 
-      // 3) DOM 적용
       for (let j = 0; j < N; j++) {
         const el = inner.children[j] as HTMLElement;
         el.style.transform = `translateX(${translates[j].toFixed(2)}px) scale(${scales[j].toFixed(3)})`;

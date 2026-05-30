@@ -769,6 +769,9 @@ select {
   align-items: center;
   gap: 0;
   padding: 0;
+  /* 위쪽에서 새 이미지가 로드되어 레이아웃이 변하더라도 사용자가 보고 있던
+     페이지의 시각 위치를 유지 (브라우저 scroll anchoring) */
+  overflow-anchor: auto;
 }
 .viewer-scroll-v .viewer-img {
   display: block;
@@ -783,6 +786,7 @@ select {
   scroll-snap-type: x mandatory;
   gap: 0;
   padding: 0;
+  overflow-anchor: auto;
 }
 .viewer-scroll-h .viewer-img {
   display: block;
