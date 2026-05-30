@@ -649,32 +649,56 @@ export function Viewer({
         </div>
       ) : (
         <div
-          ref={scrollHRef}
-          className="viewer-scroll-h"
-          dir={dir}
+          className="viewer-scroll-h-wrap"
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={toggleBarManual}
         >
-          {Array.from({ length: total }, (_, i) => (
-            <div
-              key={i}
-              className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
-                isSelected(i) ? 'selected' : ''
-              }`}
-              onClick={selectMode ? () => toggle(i) : undefined}
-            >
-              <img
-                className="viewer-img"
-                src={pageUrl(archive.id, i)}
-                alt={`page ${i + 1}`}
-                loading="lazy"
-              />
-              {selectMode && isSelected(i) && (
-                <span className="select-badge">삭제 예정</span>
-              )}
-              {selectMode && <span className="select-index">{i + 1}</span>}
-            </div>
-          ))}
+          <button
+            className="nav prev"
+            onClick={() => go(dir === 'rtl' ? 1 : -1)}
+            onDoubleClick={(e) => e.stopPropagation()}
+            disabled={dir === 'rtl' ? index >= total - 1 : index === 0}
+            aria-label="이전 페이지"
+          >
+            ‹
+          </button>
+          <div
+            ref={scrollHRef}
+            className="viewer-scroll-h"
+            dir={dir}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={toggleBarManual}
+          >
+            {Array.from({ length: total }, (_, i) => (
+              <div
+                key={i}
+                className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
+                  isSelected(i) ? 'selected' : ''
+                }`}
+                onClick={selectMode ? () => toggle(i) : undefined}
+              >
+                <img
+                  className="viewer-img"
+                  src={pageUrl(archive.id, i)}
+                  alt={`page ${i + 1}`}
+                  loading="lazy"
+                />
+                {selectMode && isSelected(i) && (
+                  <span className="select-badge">삭제 예정</span>
+                )}
+                {selectMode && <span className="select-index">{i + 1}</span>}
+              </div>
+            ))}
+          </div>
+          <button
+            className="nav next"
+            onClick={() => go(dir === 'rtl' ? -1 : 1)}
+            onDoubleClick={(e) => e.stopPropagation()}
+            disabled={dir === 'rtl' ? index === 0 : index >= total - 1}
+            aria-label="다음 페이지"
+          >
+            ›
+          </button>
         </div>
       )}
 
