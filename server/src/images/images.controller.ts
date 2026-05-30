@@ -66,10 +66,10 @@ export class ImagesController {
       return;
     }
     res.setHeader('Content-Type', img.contentType);
-    // immutable 은 쓰지 않는다 — 재압축으로 archiveId/page index 의 매핑이 바뀌면
-    // 같은 URL 에 다른 콘텐츠가 매달리므로, 브라우저가 ETag 로 재검증할 수 있어야 한다.
-    // ETag 는 콘텐츠 해시 기반이라 미변경 시 304 로 가볍게 빠진다.
-    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    // 클라이언트가 URL 에 contentHash(`?v=…`) 를 항상 부착하므로
+    // "같은 URL = 같은 콘텐츠" 가 보장된다 → immutable 안전 + 1년 캐시로 최대 효율.
+    // 재압축 시 contentHash 가 바뀌어 URL 도 바뀌므로 자동으로 새 요청이 나간다.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.setHeader('ETag', img.etag);
     res.end(img.buffer);
   }

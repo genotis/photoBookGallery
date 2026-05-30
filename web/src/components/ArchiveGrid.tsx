@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Masonry, useInfiniteLoader } from 'masonic';
 import { api, ArchiveListItem, coverUrl } from '../api';
 import { Filters } from './filters';
@@ -28,7 +28,11 @@ function Card({ data }: { index: number; data: ArchiveListItem; width: number })
       </button>
       <button className="card-open" onClick={() => open(data)}>
         {data.hasCover ? (
-          <img src={coverUrl(data.id)} alt={data.title ?? data.fileName} loading="lazy" />
+          <img
+            src={coverUrl(data.id, data.contentHash)}
+            alt={data.title ?? data.fileName}
+            loading="lazy"
+          />
         ) : (
           <div className="no-cover">표지 없음</div>
         )}
@@ -47,15 +51,21 @@ function Card({ data }: { index: number; data: ArchiveListItem; width: number })
 export function ArchiveGrid({
   filters,
   setFilters,
+  random,
 }: {
   filters: Filters;
   setFilters: (next: Filters) => void;
+  /**
+   * 랜덤 모드 — `{ seed, count }` 로 활성화. seed 가 바뀌면 새 배치를 가져온다.
+   * null 이면 일반 필터/페이지네이션 모드.
+   */
+  random: { seed: number; count: number } | null;
 }) {
   const [q, setQ] = useState(filters.q);
   const [viewer, setViewer] = useState<ArchiveListItem | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const query = useInfiniteQuery({
+  const browseQuery = useInfiniteQuery({
     queryKey: ['archives', filters],
     queryFn: ({ pageParam }) =>
       api.archives({
@@ -76,19 +86,47 @@ export function ArchiveGrid({
     initialPageParam: 1,
     getNextPageParam: (last) =>
       last.page * last.limit < last.total ? last.page + 1 : undefined,
+    enabled: random === null,
   });
 
-  const items = useMemo(
-    () => query.data?.pages.flatMap((p) => p.items) ?? [],
-    [query.data],
+  const randomQuery = useQuery({
+    queryKey: ['archives-random', random?.seed, random?.count],
+    queryFn: () => api.randomArchives(random!.count),
+    enabled: random !== null,
+    // 매 seed 변경마다 새 요청 → 캐시는 짧게.
+    staleTime: 0,
+    gcTime: 60_000,
+  });
+
+  const browseItems = useMemo(
+    () => browseQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [browseQuery.data],
   );
-  const total = query.data?.pages[0]?.total ?? 0;
+  const randomItems = randomQuery.data?.items ?? [];
+  const items = random !== null ? randomItems : browseItems;
+  const total =
+    random !== null
+      ? randomItems.length
+      : (browseQuery.data?.pages[0]?.total ?? 0);
+  const isLoading = random !== null ? randomQuery.isLoading : browseQuery.isLoading;
+
+  // 뷰어가 열린 상태에서 items 가 refetch 되면 (예: 재압축 후) 같은 id 의 새
+  // 객체로 viewer 를 동기화한다. 그렇지 않으면 stale archive (옛 contentHash) 가
+  // 계속 prop 으로 들어가 페이지 URL 이 갱신되지 않는다.
+  useEffect(() => {
+    if (!viewer) return;
+    const fresh = items.find((it) => it.id === viewer.id);
+    if (fresh && fresh !== viewer) {
+      setViewer(fresh);
+    }
+  }, [items, viewer]);
 
   // Masonic 은 items 가 바뀌어도 내부 positioner 캐시를 재사용해 변경된 결과를
-  // 렌더하지 않을 수 있다. 필터/정렬이 바뀔 때는 컴포넌트를 새로 마운트한다.
+  // 렌더하지 않을 수 있다. 필터/정렬/랜덤 시드가 바뀔 때는 컴포넌트를 새로 마운트한다.
   const masonryKey = useMemo(
     () =>
       JSON.stringify({
+        random: random ? { seed: random.seed, count: random.count } : null,
         q: filters.q,
         sort: filters.sort,
         order: filters.order,
@@ -101,13 +139,14 @@ export function ArchiveGrid({
         ta: filters.tag ?? null,
         pp: filters.pathPrefix ?? null,
       }),
-    [filters],
+    [filters, random],
   );
 
   const loadMore = useInfiniteLoader(
     async () => {
-      if (query.hasNextPage && !query.isFetchingNextPage) {
-        await query.fetchNextPage();
+      if (random !== null) return; // 랜덤 모드는 페이지네이션 없음
+      if (browseQuery.hasNextPage && !browseQuery.isFetchingNextPage) {
+        await browseQuery.fetchNextPage();
       }
     },
     { isItemLoaded: (i, loaded) => i < loaded.length, minimumBatchSize: 60, threshold: 8 },
@@ -129,20 +168,27 @@ export function ArchiveGrid({
   return (
     <section className="grid-wrap">
       <div className="toolbar">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setFilters({ ...filters, q: q.trim() });
-          }}
-        >
-          <input
-            placeholder="파일명·메모 검색"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <button type="submit">검색</button>
-        </form>
-        <select value={filters.sort} onChange={(e) => setSort(e.target.value)}>
+        {random !== null ? (
+          <span className="random-badge">
+            🎲 랜덤 <strong>{random.count}개</strong>
+            <span className="muted small"> — 좌측 사이드바의 "랜덤" 메뉴를 다시 눌러 새로 섞기</span>
+          </span>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setFilters({ ...filters, q: q.trim() });
+            }}
+          >
+            <input
+              placeholder="파일명·메모 검색"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <button type="submit">검색</button>
+          </form>
+        )}
+        <select value={filters.sort} onChange={(e) => setSort(e.target.value)} disabled={random !== null}>
           <option value="createdAt">추가일순</option>
           <option value="name">이름순</option>
           <option value="mtime">수정일순</option>
@@ -152,9 +198,11 @@ export function ArchiveGrid({
         <span className="count">{total}권</span>
       </div>
 
-      {items.length === 0 && !query.isLoading ? (
+      {items.length === 0 && !isLoading ? (
         <p className="muted empty">
-          조건에 맞는 아카이브가 없습니다.
+          {random !== null
+            ? '랜덤으로 가져올 아카이브가 없습니다.'
+            : '조건에 맞는 아카이브가 없습니다.'}
         </p>
       ) : (
         <ActionsContext.Provider value={actions}>
@@ -180,14 +228,15 @@ export function ArchiveGrid({
             if (idx < 0) return;
             const target = items[idx + delta];
             if (target) setViewer(target);
-            // 끝쪽으로 갈 때 다음 페이지를 선제적으로 받아둠
+            // 일반 모드에서 끝쪽으로 갈 때 다음 페이지를 선제적으로 받아둠 (랜덤은 페이지 없음).
             if (
+              random === null &&
               delta > 0 &&
               idx + delta >= items.length - 5 &&
-              query.hasNextPage &&
-              !query.isFetchingNextPage
+              browseQuery.hasNextPage &&
+              !browseQuery.isFetchingNextPage
             ) {
-              void query.fetchNextPage();
+              void browseQuery.fetchNextPage();
             }
           };
           return (

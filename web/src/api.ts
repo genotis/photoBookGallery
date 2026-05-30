@@ -27,6 +27,8 @@ export interface ArchiveListItem {
   rating: number | null;
   hasCover: boolean;
   missing: boolean;
+  /** 콘텐츠 해시. 재압축 시 바뀌므로 이미지 URL 의 캐시 버스터로 활용. */
+  contentHash: string;
   publisher: { id: number; name: string } | null;
   models: { id: number; name: string }[];
 }
@@ -241,6 +243,10 @@ export const api = {
   archives: (params: ListParams) =>
     request<ArchivePage>(`/archives?${toQueryString(params)}`),
 
+  /** 사이드바 "랜덤" 메뉴 — 매 호출 다른 N개를 반환. */
+  randomArchives: (n: number) =>
+    request<{ items: ArchiveListItem[] }>(`/archives/random?n=${n}`),
+
   archiveDetail: (id: number) => request<ArchiveDetail>(`/archives/${id}`),
 
   patchArchive: (id: number, payload: PatchArchivePayload) =>
@@ -397,6 +403,19 @@ export const api = {
     } | null>('/duplicates/latest'),
 };
 
-export const coverUrl = (id: number) => `/api/archives/${id}/cover.webp`;
-export const pageUrl = (id: number, index: number, size = 'preview') =>
-  `/api/archives/${id}/page/${index}?size=${size}`;
+/**
+ * 표지/페이지 이미지 URL 은 콘텐츠 해시(`v=`) 를 항상 부착한다.
+ * - 재압축으로 같은 archiveId 의 같은 인덱스에 다른 콘텐츠가 매달리면 해시가 바뀌고
+ *   URL 도 바뀌어, 브라우저 디스크 캐시에 남아 있던 immutable 응답을 자연스럽게 우회.
+ * - 재압축이 없는 한 같은 URL 이라 캐시 효율도 유지.
+ */
+export const coverUrl = (id: number, contentHash?: string | null) =>
+  `/api/archives/${id}/cover.webp${contentHash ? `?v=${contentHash.slice(0, 12)}` : ''}`;
+export const pageUrl = (
+  id: number,
+  index: number,
+  size = 'preview',
+  contentHash?: string | null,
+) =>
+  `/api/archives/${id}/page/${index}?size=${size}` +
+  (contentHash ? `&v=${contentHash.slice(0, 12)}` : '');

@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 import sharp from 'sharp';
@@ -29,6 +29,7 @@ const SIZE_QUALITY: Record<Exclude<ImageSize, 'full'>, number> = {
 
 @Injectable()
 export class ThumbnailService {
+  private readonly logger = new Logger(ThumbnailService.name);
   private readonly cacheDir: string;
 
   constructor(
@@ -36,6 +37,37 @@ export class ThumbnailService {
     private readonly archive: ArchiveService,
   ) {
     this.cacheDir = config.get<string>('cacheDir') ?? './cache';
+  }
+
+  /**
+   * 특정 콘텐츠해시·엔트리 조합의 캐시 파일을 모두 제거.
+   * 재압축 후 이전 상태의 디스크 캐시를 즉시 회수하기 위해 호출.
+   * 키 = hash("<contentHash>:<entryName>:<size>"). 모든 size 변형을 시도.
+   */
+  async purgeArchiveCache(
+    contentHash: string,
+    entryNames: string[],
+  ): Promise<number> {
+    const sizes: ImageSize[] = ['thumb', 'preview'];
+    let removed = 0;
+    for (const name of entryNames) {
+      for (const size of sizes) {
+        const key = await hashString(`${contentHash}:${name}:${size}`);
+        const file = join(this.cacheDir, key.slice(0, 2), `${key}.webp`);
+        try {
+          await unlink(file);
+          removed += 1;
+        } catch {
+          // 파일이 없어도 무시
+        }
+      }
+    }
+    if (removed) {
+      this.logger.log(
+        `캐시 ${removed}개 파일 제거 (contentHash=${contentHash.slice(0, 12)}…, ${entryNames.length}개 엔트리)`,
+      );
+    }
+    return removed;
   }
 
   /**

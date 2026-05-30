@@ -27,6 +27,8 @@ export interface ArchiveListItem {
   rating: number | null;
   hasCover: boolean;
   missing: boolean;
+  /** 콘텐츠 해시 — 재압축 시 바뀌므로 이미지 URL 의 버스터로 사용. */
+  contentHash: string;
   publisher: { id: number; name: string } | null;
   models: { id: number; name: string }[];
 }
@@ -123,6 +125,7 @@ export class ArchivesService {
       rating: a.rating,
       hasCover: Boolean(a.coverEntry),
       missing: a.missing,
+      contentHash: a.contentHash,
       publisher: a.publisher,
       models: a.models.map((m) => m.model),
     }));
@@ -150,6 +153,48 @@ export class ArchivesService {
       orderBy: { order: 'asc' },
       select: { order: true, name: true },
     });
+  }
+
+  /**
+   * 미싱 제외 + RANDOM() 으로 N개 추출. SQLite 의 RANDOM() 은 매 호출 다른 순서.
+   * id 목록만 raw 로 뽑고 본 데이터는 Prisma include 로 가져와 직렬화 일관성 유지.
+   */
+  async random(count: number): Promise<{ items: ArchiveListItem[] }> {
+    const rows = await this.prisma.$queryRaw<{ id: number }[]>`
+      SELECT id FROM "Archive"
+      WHERE "missing" = 0
+      ORDER BY RANDOM()
+      LIMIT ${count}
+    `;
+    const ids = rows.map((r) => Number(r.id));
+    if (ids.length === 0) return { items: [] };
+    const archives = await this.prisma.archive.findMany({
+      where: { id: { in: ids } },
+      include: {
+        publisher: { select: { id: true, name: true } },
+        models: { include: { model: { select: { id: true, name: true } } } },
+      },
+    });
+    // findMany 결과는 정렬을 보장하지 않으므로 위에서 받은 random 순서대로 재정렬.
+    const byId = new Map(archives.map((a) => [a.id, a]));
+    const items: ArchiveListItem[] = ids
+      .map((id) => byId.get(id))
+      .filter((a): a is NonNullable<typeof a> => Boolean(a))
+      .map((a) => ({
+        id: a.id,
+        fileName: a.fileName,
+        title: a.title,
+        format: a.format,
+        pageCount: a.pageCount,
+        favorite: a.favorite,
+        rating: a.rating,
+        hasCover: Boolean(a.coverEntry),
+        missing: a.missing,
+        contentHash: a.contentHash,
+        publisher: a.publisher,
+        models: a.models.map((m) => m.model),
+      }));
+    return { items };
   }
 
   /** 메타 수정. modelIds/tagIds 가 오면 해당 관계를 그 집합으로 교체한다. */

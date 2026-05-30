@@ -8,6 +8,6 @@ import { ThumbnailService } from './thumbnail.service';
   imports: [ArchiveModule],
   controllers: [ImagesController],
   providers: [ThumbnailService, CacheGcService],
-  exports: [CacheGcService],
+  exports: [CacheGcService, ThumbnailService],
 })
 export class ImagesModule {}

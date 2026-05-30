@@ -112,6 +112,15 @@ export function Viewer({
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
+  // 페이지 URL 은 항상 archive.contentHash 를 버스터로 부착.
+  // 재압축이 일어나면 contentHash 가 바뀌어 URL 도 자연스럽게 회전 → 옛 immutable
+  // 디스크 캐시를 우회. 같은 archive 동안은 같은 URL 이라 캐시 효율도 유지.
+  const pUrl = useCallback(
+    (id: number, i: number, size = 'preview') =>
+      pageUrl(id, i, size, archive.contentHash),
+    [archive.contentHash],
+  );
+
   // 스크롤 컨테이너 ref — 키보드/스와이프 nav 시 명시적 scrollIntoView
   const scrollHRef = useRef<HTMLDivElement | null>(null);
   const scrollVRef = useRef<HTMLDivElement | null>(null);
@@ -202,10 +211,10 @@ export function Viewer({
     [index + 1, index + 2, index - 1].forEach((i) => {
       if (i >= 0 && i < total) {
         const img = new Image();
-        img.src = pageUrl(archive.id, i);
+        img.src = pUrl(archive.id, i);
       }
     });
-  }, [archive.id, index, view, total]);
+  }, [archive.id, index, view, total, pUrl]);
 
   // 사진집이 열리면 전체 페이지를 순서대로 백그라운드 캐시에 채운다.
   // 한 페이지 로드 완료 후 다음 시작 — 동시 요청을 1개로 제한해 첫 페이지의
@@ -223,13 +232,13 @@ export function Viewer({
       };
       img.onload = done;
       img.onerror = done;
-      img.src = pageUrl(archive.id, i);
+      img.src = pUrl(archive.id, i);
     };
     next();
     return () => {
       cancelled = true;
     };
-  }, [archive.id, total]);
+  }, [archive.id, total, pUrl]);
 
   // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
   useEffect(() => {
@@ -436,15 +445,23 @@ export function Viewer({
   });
   const job = useJobStream(activeJob);
   const jobStatus = job?.status;
+  // 재압축 완료 시 — 닫지 않고 같은 사진집을 처음부터 다시 연다.
+  // 1) TanStack Query 무효화 → 그리드/entries 모두 신선해진다. archives 가 refetch
+  //    되면 부모가 새 contentHash 를 가진 archive 를 다시 내려주고, pUrl 이 새 URL
+  //    을 만들어 브라우저는 옛 캐시(immutable 잔재 포함)를 우회한다.
+  // 2) 선택 모드 해제, 페이지 인덱스 0 으로 리셋.
   useEffect(() => {
     if (jobStatus === 'done') {
       qc.invalidateQueries({ queryKey: ['archives'] });
       qc.invalidateQueries({ queryKey: ['archive', archive.id] });
       qc.invalidateQueries({ queryKey: ['entries', archive.id] });
       qc.invalidateQueries({ queryKey: ['facets'] });
-      onClose();
+      setSelectMode(false);
+      setSelected(new Set());
+      setIndex(0);
+      setActiveJob(null);
     }
-  }, [jobStatus, qc, archive.id, onClose]);
+  }, [jobStatus, qc, archive.id]);
 
   const selectedCount = selected.size;
   const repackPending =
@@ -706,7 +723,7 @@ export function Viewer({
               <img
                 key={index}
                 className="viewer-img"
-                src={pageUrl(archive.id, index)}
+                src={pUrl(archive.id, index)}
                 alt={`page ${index + 1}`}
               />
               {selectMode && isSelected(index) && (
@@ -740,7 +757,7 @@ export function Viewer({
             >
               <img
                 className="viewer-img"
-                src={pageUrl(archive.id, i)}
+                src={pUrl(archive.id, i)}
                 alt={`page ${i + 1}`}
                 loading="lazy"
               />
@@ -769,7 +786,7 @@ export function Viewer({
             >
               <img
                 className="viewer-img"
-                src={pageUrl(archive.id, i)}
+                src={pUrl(archive.id, i)}
                 alt={`page ${i + 1}`}
                 loading="lazy"
               />
@@ -799,7 +816,7 @@ export function Viewer({
                 aria-label={`페이지 ${i + 1}로 이동`}
               >
                 <img
-                  src={pageUrl(archive.id, i, 'thumb')}
+                  src={pUrl(archive.id, i, 'thumb')}
                   alt=""
                   loading="lazy"
                   draggable={false}

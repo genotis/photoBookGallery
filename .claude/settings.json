@@ -21,7 +21,14 @@
       "Bash(zip -q /tmp/pbg-test/books/sample-A.cbz 1.jpg 2.jpg 10.jpg)",
       "Bash(zip -q /tmp/pbg-test/books/sample-B.cbz 1.jpg 2.jpg)",
       "Bash(lsof -ti:3000)",
-      "Bash(xargs kill -9)"
+      "Bash(xargs kill -9)",
+      "Bash(git commit -m ' *)",
+      "Bash(df -h /private/tmp 2>&1 | head -3; ls -la /private/tmp/claude-502/ 2>&1 | head -5)",
+      "Read(//private/tmp/claude-502/**)",
+      "Bash(tar -tf /tmp/pbg-check.tar)",
+      "Bash(python3 -c \"import json,tarfile; t=tarfile.open\\('/tmp/pbg-check.tar'\\); f=t.extractfile\\('manifest.json'\\); print\\(json.loads\\(f.read\\(\\)\\)[0].get\\('RepoTags'\\)\\)\")",
+      "Bash(rm -f /tmp/pbg-check.tar)",
+      "Bash(python3 -c \"import json,tarfile; t=tarfile.open\\('/tmp/pbg-check.tar'\\); f=t.extractfile\\('manifest.json'\\); print\\('RepoTags:', json.loads\\(f.read\\(\\)\\)[0].get\\('RepoTags'\\)\\)\")"
     ]
   }
 }

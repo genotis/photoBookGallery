@@ -39,6 +39,7 @@
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | GET | `/api/archives` | 목록. 쿼리: `page,limit,sort,order, q, country, publisher, model, series, tag, favorite, ratingMin, format` |
+| GET | `/api/archives/random?n=<1-200>` | 랜덤 N개. SQLite `ORDER BY RANDOM()`, 매 호출 다른 결과. 좌측 사이드바 "랜덤" 메뉴용. `missing` 자동 제외 |
 | GET | `/api/archives/:id` | 상세(메타 + 페이지수 + 표지) |
 | PATCH | `/api/archives/:id` | 메타 수정 `{ countryId, publisherId, seriesId, modelIds[], tagIds[], rating, favorite, note, publishedAt, coverEntry }` |
 | POST | `/api/archives/batch` | 일괄 편집 `{ ids[], set:{...}, addTags[], removeTags[] }` |
@@ -54,15 +55,20 @@
 ```json
 {
   "items": [
-    { "id": 12, "fileName": "...", "format": "cbz", "pageCount": 84,
-      "coverUrl": "/api/archives/12/cover.webp",
+    { "id": 12, "fileName": "...", "title": null, "format": "cbz", "pageCount": 84,
+      "contentHash": "<BLAKE3 hex>",
+      "hasCover": true,
       "models": [{ "id": 3, "name": "..." }],
       "publisher": { "id": 1, "name": "..." },
-      "favorite": true, "rating": 4 }
+      "favorite": true, "rating": 4, "missing": false }
   ],
   "total": 5321, "page": 1, "limit": 60
 }
 ```
+
+`contentHash` 가 응답에 포함된다 — 클라이언트는 이미지 URL 에 이 값을 `?v=…`
+버스터로 부착해 "URL = 콘텐츠 주소" 가 되도록 한다. 재압축으로 콘텐츠가 바뀌면
+URL 도 바뀌어 브라우저 캐시(immutable) 가 자연스럽게 우회된다.
 
 ## 4. 이미지 스트리밍 (갤러리/뷰어)
 | 메서드 | 경로 | 설명 |
@@ -72,9 +78,13 @@
 | GET | `/api/archives/:id/page-by-entry?name=&size=` | 엔트리명 직접 지정 |
 
 - `size=thumb`: 작은 WebP(그리드), `preview`: 화면맞춤 리사이즈, `full`: 원본.
-- 응답에 `ETag`(콘텐츠해시:엔트리명:사이즈 기반) + `Cache-Control: private, max-age=0, must-revalidate`.
-  재압축으로 같은 URL(`page/<index>`) 의 매핑이 바뀌어도 ETag 가 달라져 304 ↔ 200 으로
-  정확히 동작. `immutable` 은 쓰지 않는다(브라우저가 재검증을 생략해 옛 페이지가 남는다).
+- 클라이언트가 모든 이미지 URL 에 `?v=<contentHash 앞 12자>` 를 부착한다 →
+  "URL = 콘텐츠 주소" 가 되므로 응답은 `Cache-Control: private, max-age=31536000, immutable`
+  로 최대 효율 캐시. 재압축 시 contentHash 가 바뀌어 URL 도 자동으로 회전,
+  옛 캐시 응답은 자연스럽게 우회. ETag 는 보조용(콘텐츠해시:엔트리명:사이즈 기반).
+- 재압축 종료 직전 서버가 옛 contentHash 키의 디스크 캐시 파일을 즉시 제거
+  ([`ThumbnailService.purgeArchiveCache`](../server/src/images/thumbnail.service.ts))
+  — LRU 회수를 기다리지 않고 도달 불가 캐시를 회수.
 
 ## 5. 편집 (삭제 + 재압축)
 | 메서드 | 경로 | 설명 |

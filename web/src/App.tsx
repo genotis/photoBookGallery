@@ -1,18 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { Login } from './components/Login';
 import { Settings } from './components/Settings';
 import { ArchiveGrid } from './components/ArchiveGrid';
-import { FacetKey, FacetSidebar } from './components/FacetSidebar';
+import { FacetKey, LeftSidebar } from './components/LeftSidebar';
 import { Filters, INITIAL_FILTERS, toggleId } from './components/filters';
+import { useAppPrefs } from './components/useAppPrefs';
 
-const FACET_AUTO_THRESHOLD = 960;
-
-function getInitialFacets(): boolean {
-  if (typeof window === 'undefined') return true;
-  return window.innerWidth >= FACET_AUTO_THRESHOLD;
-}
+const SIDEBAR_AUTO_THRESHOLD = 960;
 
 export function App() {
   const qc = useQueryClient();
@@ -26,24 +22,13 @@ export function App() {
 
   const [filters, setFilters] = useState<Filters>(INITIAL_FILTERS);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [facetsOpen, setFacetsOpen] = useState(getInitialFacets);
-
-  // 사용자가 명시적으로 토글했는지 추적 — 회전 시 자동 전환은 사용자가 손대지
-  // 않은 경우에만. 사용자가 한 번 닫으면(또는 열면) 회전해도 그 의도를 유지.
-  const facetsUserOverride = useRef(false);
-  useEffect(() => {
-    const onResize = () => {
-      if (facetsUserOverride.current) return;
-      const next = window.innerWidth >= FACET_AUTO_THRESHOLD;
-      setFacetsOpen((cur) => (cur === next ? cur : next));
-    };
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
-    };
-  }, []);
+  const [leftOpen, setLeftOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= SIDEBAR_AUTO_THRESHOLD;
+  });
+  /** 랜덤 모드 — 0 이면 비활성, 양수면 그 시드값으로 활성. 클릭마다 +1 → 재섞기. */
+  const [randomSeed, setRandomSeed] = useState<number>(0);
+  const [appPrefs] = useAppPrefs();
 
   // sticky 헤더의 실제 높이를 측정해 CSS 변수에 반영 — 패싯 사이드바가 정확히
   // 헤더 아래에 stick 하도록. safe-area-inset 변화/회전에도 대응.
@@ -60,10 +45,6 @@ export function App() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [me.data?.authenticated, settingsOpen]);
-  const toggleFacets = () => {
-    facetsUserOverride.current = true;
-    setFacetsOpen((v) => !v);
-  };
 
   if (me.isLoading) {
     return <main className="center">로딩 중…</main>;
@@ -94,22 +75,28 @@ export function App() {
     });
   };
 
+  /** "전체 보기" — 랜덤 모드 종료 + 모든 필터 해제 (정렬/검색어는 유지). */
+  const goAll = () => {
+    setRandomSeed(0);
+    clearFacets();
+  };
+
   return (
     <div className="app">
       <header className="app-bar" ref={headerRef}>
+        <button
+          className="ghost icon-only"
+          onClick={() => setLeftOpen((v) => !v)}
+          aria-label={leftOpen ? '메뉴 숨김' : '메뉴 열기'}
+          title={leftOpen ? '메뉴 숨김' : '메뉴 열기'}
+        >
+          ☰
+        </button>
         <h1>photoBookGallery</h1>
         <div className="app-bar-right">
           <span className={`badge ${ok ? 'ok' : 'down'}`}>
             DB {health.data?.db ?? '?'}
           </span>
-          {hasRoots && (
-            <button className="ghost" onClick={toggleFacets}>
-              {facetsOpen ? '필터 숨김' : '필터 ▾'}
-            </button>
-          )}
-          <button className="ghost" onClick={() => setSettingsOpen(true)}>
-            ⚙ 설정
-          </button>
           <button
             className="ghost"
             onClick={async () => {
@@ -122,8 +109,34 @@ export function App() {
         </div>
       </header>
       <div className="app-body">
+        {hasRoots && leftOpen && (
+          <LeftSidebar
+            active={randomSeed > 0 ? 'random' : 'browse'}
+            onAll={goAll}
+            onRandom={() => setRandomSeed((s) => s + 1)}
+            onSettings={() => setSettingsOpen(true)}
+            filters={filters}
+            onToggleFacet={toggleFacet}
+            onClearFacets={clearFacets}
+            onToggleFavorite={() =>
+              setFilters({
+                ...filters,
+                favorite: filters.favorite ? undefined : true,
+              })
+            }
+            onSelectPath={(p) => setFilters({ ...filters, pathPrefix: p })}
+          />
+        )}
         {hasRoots ? (
-          <ArchiveGrid filters={filters} setFilters={setFilters} />
+          <ArchiveGrid
+            filters={filters}
+            setFilters={setFilters}
+            random={
+              randomSeed > 0
+                ? { seed: randomSeed, count: appPrefs.randomCount }
+                : null
+            }
+          />
         ) : (
           <section className="grid-wrap">
             <div className="empty-onboarding">
@@ -137,20 +150,6 @@ export function App() {
               </button>
             </div>
           </section>
-        )}
-        {hasRoots && facetsOpen && (
-          <FacetSidebar
-            filters={filters}
-            onToggle={toggleFacet}
-            onClear={clearFacets}
-            onToggleFavorite={() =>
-              setFilters({
-                ...filters,
-                favorite: filters.favorite ? undefined : true,
-              })
-            }
-            onSelectPath={(p) => setFilters({ ...filters, pathPrefix: p })}
-          />
         )}
       </div>
 

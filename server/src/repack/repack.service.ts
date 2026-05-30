@@ -8,6 +8,7 @@ import sharp from 'sharp';
 import { ArchiveService } from '../archive/archive.service';
 import { ZipWriter } from '../archive/zip.writer';
 import { hashFile } from '../common/hash.util';
+import { ThumbnailService } from '../images/thumbnail.service';
 import { JobsService } from '../jobs/jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { dbJobIdFrom, QueueService } from '../queue/queue.service';
@@ -43,6 +44,7 @@ export class RepackService implements OnModuleInit {
     private readonly lock: RepackLock,
     private readonly searchIndex: SearchIndexService,
     private readonly queue: QueueService,
+    private readonly thumbnails: ThumbnailService,
   ) {
     this.backupRoot = config.get<string>('backupDir') ?? './backups';
   }
@@ -211,6 +213,14 @@ export class RepackService implements OnModuleInit {
       }
     });
     await this.searchIndex.reindex(archiveId);
+
+    // 6) 캐시 회수 — 이전 contentHash 로 만들어진 썸네일/프리뷰 파일은 더 이상
+    //    접근 불가(키가 contentHash 에 묶여 있음)하므로 LRU 를 기다리지 않고 즉시 제거.
+    //    새 contentHash 의 캐시는 다음 접근 때 생성된다.
+    await this.thumbnails.purgeArchiveCache(
+      archive.contentHash,
+      allEntries.map((e) => e.name),
+    );
 
     await this.jobs.done(jobId);
     this.logger.log(
