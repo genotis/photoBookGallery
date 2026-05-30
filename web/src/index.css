@@ -564,9 +564,9 @@ select {
   overflow: hidden;
   /* 매그니피케이션: 마우스가 가까워지면 위쪽으로 커지고, translateX 로 옆으로 밀린다. */
   transform-origin: center bottom;
-  /* rAF 가 매 프레임 정확한 transform 을 설정 — CSS transition 으로 중간 상태에서
-     겹치지 않도록 transform 자체에는 transition 을 두지 않음. border-color 만 부드럽게. */
-  transition: border-color 0.12s;
+  /* 짧은 transition 으로 rAF 간 미세한 jitter 흡수 — 너무 길면 중간 상태에서
+     인접 썸네일이 겹친다. 매 프레임 target 까지 30ms 안에 도달. */
+  transition: border-color 0.12s, transform 0.03s linear;
   will-change: transform;
 }
 .thumb:hover {

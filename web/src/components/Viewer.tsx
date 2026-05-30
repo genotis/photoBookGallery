@@ -283,7 +283,9 @@ export function Viewer({
       const mouseInInner = mouseX - innerRect.left + inner.scrollLeft;
 
       const RADIUS = 160;
-      const MAX_SCALE = 1.7;
+      const MAX_SCALE = 1.5;
+      // 안전 마진: 부동소수점 오차와 sub-pixel 렌더링으로 인한 0.5~1px 겹침을 차단
+      const SAFETY_PX = 1;
 
       // 1) scale + cursorIdx (캐시된 centers 사용 → 안정적)
       const scales = new Array<number>(N);
@@ -300,15 +302,17 @@ export function Viewer({
         scales[j] = 1 + (MAX_SCALE - 1) * eased;
       }
 
-      // 2) 누적 translateX: 인접 두 썸네일의 (scale-1)*W/2 합 만큼 떨어뜨림
+      // 2) 누적 translateX: 인접 두 썸네일의 (scale-1)*W/2 합 + 안전 마진 만큼 떨어뜨림
       const halfExtras = new Array<number>(N);
       for (let j = 0; j < N; j++) halfExtras[j] = ((scales[j] - 1) * baseW) / 2;
       const translates = new Array<number>(N).fill(0);
       for (let i = cursorIdx + 1; i < N; i++) {
-        translates[i] = translates[i - 1] + halfExtras[i - 1] + halfExtras[i];
+        translates[i] =
+          translates[i - 1] + halfExtras[i - 1] + halfExtras[i] + SAFETY_PX;
       }
       for (let i = cursorIdx - 1; i >= 0; i--) {
-        translates[i] = translates[i + 1] - halfExtras[i + 1] - halfExtras[i];
+        translates[i] =
+          translates[i + 1] - halfExtras[i + 1] - halfExtras[i] - SAFETY_PX;
       }
 
       for (let j = 0; j < N; j++) {
