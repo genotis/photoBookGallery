@@ -96,9 +96,34 @@ export function Viewer({
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
+  // 스크롤 컨테이너 ref — 키보드/스와이프 nav 시 명시적 scrollIntoView
+  const scrollHRef = useRef<HTMLDivElement | null>(null);
+  const scrollVRef = useRef<HTMLDivElement | null>(null);
+
+  /** 명시적 nav (키보드/스와이프/버튼). 스크롤 컨테이너 동기화 포함. */
+  const navTo = useCallback(
+    (next: number) => {
+      const clamped = Math.min(total - 1, Math.max(0, next));
+      setIndex(clamped);
+      if (view === 'scroll-h') {
+        scrollHRef.current?.children[clamped]?.scrollIntoView({
+          inline: 'start',
+          block: 'nearest',
+          behavior: 'smooth',
+        });
+      } else if (view === 'scroll-v') {
+        scrollVRef.current?.children[clamped]?.scrollIntoView({
+          block: 'start',
+          behavior: 'smooth',
+        });
+      }
+    },
+    [total, view],
+  );
+
   const go = useCallback(
-    (delta: number) => setIndex((i) => Math.min(total - 1, Math.max(0, i + delta))),
-    [total],
+    (delta: number) => navTo(index + delta),
+    [index, navTo],
   );
 
   const toggle = useCallback((i: number) => {
@@ -146,15 +171,42 @@ export function Viewer({
     });
   }, [archive.id, index, view, total]);
 
-  // 가로 스크롤: 현재 index 가 바뀌면 해당 페이지로 스크롤
-  const scrollHRef = useRef<HTMLDivElement | null>(null);
+  // 보기 모드가 바뀌면 현재 index 위치로 스크롤 동기화 (한 번만)
+  const indexRef = useRef(index);
+  indexRef.current = index;
   useEffect(() => {
-    if (view !== 'scroll-h') return;
-    const container = scrollHRef.current;
+    const i = indexRef.current;
+    if (view === 'scroll-h') {
+      scrollHRef.current?.children[i]?.scrollIntoView({ inline: 'start', block: 'nearest' });
+    } else if (view === 'scroll-v') {
+      scrollVRef.current?.children[i]?.scrollIntoView({ block: 'start' });
+    }
+  }, [view]);
+
+  // 스크롤 모드: IntersectionObserver 로 화면에서 가장 잘 보이는 페이지를 추적해
+  // 페이지 번호를 갱신. 명시적 nav 와는 별개 경로라 루프 없음.
+  useEffect(() => {
+    if (view === 'single') return;
+    const container = view === 'scroll-h' ? scrollHRef.current : scrollVRef.current;
     if (!container) return;
-    const child = container.children[index] as HTMLElement | undefined;
-    child?.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'smooth' });
-  }, [index, view]);
+    const children = Array.from(container.children) as HTMLElement[];
+    if (children.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length === 0) return;
+        const best = visible.reduce((a, b) =>
+          a.intersectionRatio >= b.intersectionRatio ? a : b,
+        );
+        const idx = children.indexOf(best.target as HTMLElement);
+        if (idx >= 0) setIndex((cur) => (cur === idx ? cur : idx));
+      },
+      { root: container, threshold: [0.25, 0.5, 0.75, 1] },
+    );
+    children.forEach((c) => observer.observe(c));
+    return () => observer.disconnect();
+  }, [view, total, archive.id]);
 
   // 터치 스와이프 (단일 모드) — RTL 시 의미 반전
   const touchStartX = useRef<number | null>(null);
@@ -169,6 +221,27 @@ export function Viewer({
     if (Math.abs(dx) < 50) return;
     const fwd = dir === 'rtl' ? 1 : -1; // RTL: 오른쪽으로 스와이프하면 다음
     go(dx * fwd < 0 ? 1 : -1);
+  };
+
+  // 전체화면 토글 (Fullscreen API). iPad Safari 는 미지원 — 홈화면 추가 PWA 가 대안.
+  const [isFs, setIsFs] = useState(
+    typeof document !== 'undefined' && !!document.fullscreenElement,
+  );
+  useEffect(() => {
+    const onChange = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // 브라우저가 거부하거나 미지원 — 무시
+    }
   };
 
   // 상단바 자동 숨김
@@ -250,13 +323,21 @@ export function Viewer({
           <button className="vb-icon vb-close" onClick={onClose} title="닫기 (Esc)">
             ✕
           </button>
+          <button
+            className="vb-icon"
+            onClick={toggleFullscreen}
+            title={isFs ? '전체화면 해제' : '전체화면'}
+            aria-label={isFs ? '전체화면 해제' : '전체화면'}
+          >
+            <span className={`vb-ico ${isFs ? 'i-fs-exit' : 'i-fs-enter'}`} />
+          </button>
           <span className="vb-title" title={archive.fileName}>
             {archive.title || archive.fileName}
           </span>
         </div>
 
         <div className="vb-center">
-          {!selectMode && (view === 'single' || view === 'scroll-h') && (
+          {!selectMode && total > 0 && (
             <span className="vb-page">
               <strong>{index + 1}</strong>
               <span className="vb-page-sep">/</span>
@@ -417,7 +498,7 @@ export function Viewer({
           </button>
         </div>
       ) : view === 'scroll-v' ? (
-        <div className="viewer-scroll-v" onClick={(e) => e.stopPropagation()}>
+        <div ref={scrollVRef} className="viewer-scroll-v" onClick={(e) => e.stopPropagation()}>
           {Array.from({ length: total }, (_, i) => (
             <div
               key={i}
