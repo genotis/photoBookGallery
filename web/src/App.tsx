@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { Login } from './components/Login';
@@ -44,6 +44,22 @@ export function App() {
       window.removeEventListener('orientationchange', onResize);
     };
   }, []);
+
+  // sticky 헤더의 실제 높이를 측정해 CSS 변수에 반영 — 패싯 사이드바가 정확히
+  // 헤더 아래에 stick 하도록. safe-area-inset 변화/회전에도 대응.
+  const headerRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const apply = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--header-h', `${h}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [me.data?.authenticated, settingsOpen]);
   const toggleFacets = () => {
     facetsUserOverride.current = true;
     setFacetsOpen((v) => !v);
@@ -80,7 +96,7 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="app-bar">
+      <header className="app-bar" ref={headerRef}>
         <h1>photoBookGallery</h1>
         <div className="app-bar-right">
           <span className={`badge ${ok ? 'ok' : 'down'}`}>

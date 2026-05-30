@@ -18,6 +18,10 @@ data/
 cache/
 backups/
 dev-data/
+
+# 빌드된 이미지 export
+pbg-image*.tar
+pbg-image*.tar.gz
 *.db
 *.sqlite
 *.sqlite3

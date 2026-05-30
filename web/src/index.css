@@ -87,18 +87,24 @@ select {
 }
 
 /* ---- 레이아웃 ---- */
+/* window 스크롤 기반 — Masonic 의 onRender 가 정상 동작하려면
+   .grid-wrap 이 별도 스크롤 컨테이너가 되면 안 된다. 헤더는 sticky 로 고정. */
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
 }
 
 .app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.7rem 1.2rem;
   border-bottom: 1px solid #2a2e35;
+  background: #14161a;
 }
 .app-bar h1 {
   font-size: 1.1rem;
@@ -111,9 +117,8 @@ select {
 }
 
 .app-body {
-  flex: 1;
   display: flex;
-  min-height: 0;
+  align-items: flex-start;
 }
 
 /* ---- 루트 사이드바 ---- */
@@ -181,8 +186,9 @@ select {
 /* ---- 그리드 ---- */
 .grid-wrap {
   flex: 1;
+  min-width: 0;
   padding: 1rem 1.2rem;
-  overflow-y: auto;
+  /* overflow 없음 — window 가 스크롤한다 (Masonic 요구) */
 }
 .toolbar {
   display: flex;
@@ -599,12 +605,16 @@ select {
   color: #f4c542;
 }
 
-/* ---- 패싯 사이드바 ---- */
+/* ---- 패싯 사이드바 (window 스크롤 시에도 화면에 고정) ---- */
 .facets {
   width: 260px;
   flex-shrink: 0;
   border-left: 1px solid #2a2e35;
   padding: 1rem;
+  position: sticky;
+  top: var(--header-h, 56px);
+  align-self: flex-start;
+  max-height: calc(100vh - var(--header-h, 56px));
   overflow-y: auto;
 }
 .facets-head {

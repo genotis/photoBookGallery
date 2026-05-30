@@ -221,9 +221,13 @@ export function Viewer({
       alert('모든 페이지를 제외할 수 없습니다.');
       return;
     }
+    const pageNumbers = Array.from(selected)
+      .sort((a, b) => a - b)
+      .map((i) => i + 1)
+      .join(', ');
     const ok = window.confirm(
-      `${selectedCount}개 페이지를 삭제하고 .cbz로 재압축합니다.\n` +
-        '원본은 백업 경로로 보관됩니다. 계속할까요?',
+      `다음 ${selectedCount}개 페이지를 삭제합니다:\n  ${pageNumbers}\n\n` +
+        '원본은 백업 경로로 보관되고, 새 .cbz 가 활성 위치에 배치됩니다. 계속할까요?',
     );
     if (ok) repack.mutate();
   };
