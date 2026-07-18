@@ -9,6 +9,8 @@ export interface ViewerBehavior {
   tapNav: boolean;
   /** 슬라이드쇼 자동 진행 간격 (초). 1~60 범위. */
   slideshowSec: number;
+  /** 슬라이드쇼가 마지막 페이지에 닿으면 다음 사진집으로 자동 이어가기 */
+  slideshowNextFile: boolean;
 }
 
 const STORAGE_KEY = 'pbg.viewerBehavior.v1';
@@ -17,6 +19,7 @@ const DEFAULT: ViewerBehavior = {
   reveal: 'both',
   tapNav: true,
   slideshowSec: 5,
+  slideshowNextFile: false,
 };
 
 function load(): ViewerBehavior {
@@ -35,6 +38,10 @@ function load(): ViewerBehavior {
         typeof v.slideshowSec === 'number' && v.slideshowSec >= 1 && v.slideshowSec <= 60
           ? Math.round(v.slideshowSec)
           : DEFAULT.slideshowSec,
+      slideshowNextFile:
+        typeof v.slideshowNextFile === 'boolean'
+          ? v.slideshowNextFile
+          : DEFAULT.slideshowNextFile,
     };
   } catch {
     return DEFAULT;

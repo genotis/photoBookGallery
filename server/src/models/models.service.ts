@@ -18,7 +18,10 @@ export interface ModelListItem {
   aliases: string[];
   profileImg: string | null;
   bio: string | null;
+  favorite: boolean;
   count: number;
+  /** 갤러리 대표 표지 — 이 모델의 표지 있는 아카이브 하나. 없으면 null. */
+  cover: { archiveId: number; contentHash: string } | null;
 }
 
 function decodeAliases(raw: string | null | undefined): string[] {
@@ -41,6 +44,39 @@ function encodeAliases(arr: string[] | undefined): string | undefined {
 export class ModelsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** 대표 표지 아카이브를 함께 뽑기 위한 include (표지 있고 missing 아닌 것 1개). */
+  private readonly coverInclude = {
+    _count: { select: { archives: true } },
+    archives: {
+      where: { archive: { coverEntry: { not: null }, missing: false } },
+      take: 1,
+      select: { archive: { select: { id: true, contentHash: true } } },
+    },
+  } satisfies Prisma.ModelInclude;
+
+  private toItem(r: {
+    id: number;
+    name: string;
+    aliases: string | null;
+    profileImg: string | null;
+    bio: string | null;
+    favorite: boolean;
+    _count: { archives: number };
+    archives: { archive: { id: number; contentHash: string } }[];
+  }): ModelListItem {
+    const cov = r.archives[0]?.archive;
+    return {
+      id: r.id,
+      name: r.name,
+      aliases: decodeAliases(r.aliases),
+      profileImg: r.profileImg,
+      bio: r.bio,
+      favorite: r.favorite,
+      count: r._count.archives,
+      cover: cov ? { archiveId: cov.id, contentHash: cov.contentHash } : null,
+    };
+  }
+
   async list(q?: string): Promise<ModelListItem[]> {
     // 이름·별칭(JSON 문자열) 둘 다 포함 검색
     const where: Prisma.ModelWhereInput = q
@@ -48,33 +84,19 @@ export class ModelsService {
       : {};
     const rows = await this.prisma.model.findMany({
       where,
-      orderBy: { name: 'asc' },
-      include: { _count: { select: { archives: true } } },
+      orderBy: [{ favorite: 'desc' }, { name: 'asc' }],
+      include: this.coverInclude,
     });
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      aliases: decodeAliases(r.aliases),
-      profileImg: r.profileImg,
-      bio: r.bio,
-      count: r._count.archives,
-    }));
+    return rows.map((r) => this.toItem(r));
   }
 
   async detail(id: number): Promise<ModelListItem> {
     const r = await this.prisma.model.findUnique({
       where: { id },
-      include: { _count: { select: { archives: true } } },
+      include: this.coverInclude,
     });
     if (!r) throw new NotFoundException('모델을 찾을 수 없습니다.');
-    return {
-      id: r.id,
-      name: r.name,
-      aliases: decodeAliases(r.aliases),
-      profileImg: r.profileImg,
-      bio: r.bio,
-      count: r._count.archives,
-    };
+    return this.toItem(r);
   }
 
   async create(dto: UpsertModelDto): Promise<ModelListItem> {
@@ -93,7 +115,9 @@ export class ModelsService {
         aliases: decodeAliases(r.aliases),
         profileImg: r.profileImg,
         bio: r.bio,
+        favorite: r.favorite,
         count: 0,
+        cover: null,
       };
     } catch (e) {
       if (
@@ -113,6 +137,7 @@ export class ModelsService {
     if (dto.aliases !== undefined) data.aliases = encodeAliases(dto.aliases);
     if (dto.profileImg !== undefined) data.profileImg = dto.profileImg;
     if (dto.bio !== undefined) data.bio = dto.bio;
+    if (dto.favorite !== undefined) data.favorite = dto.favorite;
     try {
       await this.prisma.model.update({ where: { id }, data });
     } catch (e) {

@@ -338,22 +338,41 @@ export function Viewer({
     [go],
   );
 
-  // 슬라이드쇼 — 설정 간격마다 다음 페이지로 자동 진행. 마지막 페이지에서 자동 정지.
+  // 슬라이드쇼 — 설정 간격마다 다음 페이지로 자동 진행.
+  // 마지막 페이지에서: 옵션이 켜져 있고 다음 사진집이 있으면 이어가고, 아니면 정지.
   const [slideshow, setSlideshow] = useState(false);
+  // 자동으로 다음 사진집으로 넘어가는 중이면 archive 변경 시 슬라이드쇼를 끄지 않는다.
+  const keepSlideshowRef = useRef(false);
   useEffect(() => {
     if (!slideshow || total === 0) return;
     const ms = Math.max(1, behavior.slideshowSec) * 1000;
     const timer = window.setTimeout(() => {
       if (index < total - 1) {
         navTo(index + 1);
+      } else if (behavior.slideshowNextFile && hasNext && onNavigateArchive) {
+        keepSlideshowRef.current = true; // archive 전환 후에도 슬라이드쇼 유지
+        onNavigateArchive(1);
       } else {
         setSlideshow(false);
       }
     }, ms);
     return () => window.clearTimeout(timer);
-  }, [slideshow, index, total, behavior.slideshowSec, navTo]);
-  // 사진집/뷰가 바뀌면 슬라이드쇼 자동 종료
+  }, [
+    slideshow,
+    index,
+    total,
+    behavior.slideshowSec,
+    behavior.slideshowNextFile,
+    hasNext,
+    onNavigateArchive,
+    navTo,
+  ]);
+  // 사진집/뷰가 바뀌면 슬라이드쇼 자동 종료 — 단 자동 이어가기 중이면 유지.
   useEffect(() => {
+    if (keepSlideshowRef.current) {
+      keepSlideshowRef.current = false;
+      return;
+    }
     setSlideshow(false);
   }, [archive.id]);
   const toggleSlideshow = () => setSlideshow((v) => !v);

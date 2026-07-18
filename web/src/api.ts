@@ -104,7 +104,9 @@ export interface ModelRef {
   aliases?: string[];
   profileImg?: string | null;
   bio?: string | null;
+  favorite?: boolean;
   count?: number;
+  cover?: { archiveId: number; contentHash: string } | null;
 }
 
 export interface Facets {
@@ -374,6 +376,20 @@ export const api = {
     request<ModelRef>(`/models/${fromId}/merge`, {
       method: 'POST',
       body: JSON.stringify({ intoId }),
+    }),
+  patchModel: (
+    id: number,
+    data: {
+      name?: string;
+      aliases?: string[];
+      profileImg?: string;
+      bio?: string;
+      favorite?: boolean;
+    },
+  ) =>
+    request<ModelRef>(`/models/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
     }),
 
   // ---- 검색 / 패싯 ----

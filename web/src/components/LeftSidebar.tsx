@@ -31,6 +31,7 @@ export function LeftSidebar({
   active,
   onAll,
   onRandom,
+  onModels,
   onSettings,
   filters,
   onToggleFacet,
@@ -38,9 +39,10 @@ export function LeftSidebar({
   onToggleFavorite,
   onSelectPath,
 }: {
-  active: 'browse' | 'random';
+  active: 'browse' | 'random' | 'models';
   onAll: () => void;
   onRandom: () => void;
+  onModels: () => void;
   onSettings: () => void;
   filters: Filters;
   onToggleFacet: (key: FacetKey, id: number) => void;
@@ -112,6 +114,15 @@ export function LeftSidebar({
           <span className="left-nav-label">
             랜덤 <span className="muted small">{prefs.randomCount}개</span>
           </span>
+        </button>
+        <button
+          type="button"
+          className={`left-nav-item ${active === 'models' ? 'on' : ''}`}
+          onClick={onModels}
+          title="모델별 브라우징"
+        >
+          <span className="left-nav-icon" aria-hidden>👤</span>
+          <span className="left-nav-label">모델</span>
         </button>
       </nav>
 

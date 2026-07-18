@@ -2053,3 +2053,80 @@ ul.tree ul {
 .classify-backup select {
   font-size: 0.78rem;
 }
+
+/* ---- 모델 갤러리 ---- */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  padding: 4px;
+}
+.model-card {
+  position: relative;
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.model-fav {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  font-size: 1rem;
+  color: #ffcf4d;
+  cursor: pointer;
+  line-height: 1;
+}
+.model-fav:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+.model-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.model-open > img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
+}
+.model-open .no-cover {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  background: #14161a;
+  font-size: 0.85rem;
+}
+.model-caption {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.model-caption .name {
+  color: #e6e9ee;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-caption .pages {
+  color: #9aa1ab;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}

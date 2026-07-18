@@ -139,8 +139,11 @@ model Model {
   aliases    String? // JSON 배열 문자열 (별칭/표기 변형)
   profileImg String?
   bio        String?
+  favorite   Boolean        @default(false) // 모델 즐겨찾기
   archives   ArchiveModel[]
   createdAt  DateTime       @default(now())
+
+  @@index([favorite])
 }
 
 model ArchiveModel {

@@ -4,6 +4,7 @@ import { api } from './api';
 import { Login } from './components/Login';
 import { Settings } from './components/Settings';
 import { ArchiveGrid } from './components/ArchiveGrid';
+import { ModelGallery } from './components/ModelGallery';
 import { FacetKey, LeftSidebar } from './components/LeftSidebar';
 import { Filters, INITIAL_FILTERS, toggleId } from './components/filters';
 import { useAppPrefs } from './components/useAppPrefs';
@@ -28,6 +29,8 @@ export function App() {
   });
   /** 랜덤 모드 — 0 이면 비활성, 양수면 그 시드값으로 활성. 클릭마다 +1 → 재섞기. */
   const [randomSeed, setRandomSeed] = useState<number>(0);
+  /** 모델별 브라우징 뷰 활성 여부. */
+  const [modelsView, setModelsView] = useState(false);
   const [appPrefs] = useAppPrefs();
 
   // sticky 헤더의 실제 높이를 측정해 CSS 변수에 반영 — 패싯 사이드바가 정확히
@@ -58,6 +61,7 @@ export function App() {
   const hasRoots = (roots.data?.length ?? 0) > 0;
 
   const toggleFacet = (key: FacetKey, id: number) => {
+    setModelsView(false);
     setFilters({ ...filters, [key]: toggleId(filters[key], id) });
   };
 
@@ -75,9 +79,10 @@ export function App() {
     });
   };
 
-  /** "전체 보기" — 랜덤 모드 종료 + 모든 필터 해제 (정렬/검색어는 유지). */
+  /** "전체 보기" — 랜덤·모델 뷰 종료 + 모든 필터 해제 (정렬/검색어는 유지). */
   const goAll = () => {
     setRandomSeed(0);
+    setModelsView(false);
     clearFacets();
   };
 
@@ -111,23 +116,44 @@ export function App() {
       <div className="app-body">
         {hasRoots && leftOpen && (
           <LeftSidebar
-            active={randomSeed > 0 ? 'random' : 'browse'}
+            active={
+              modelsView ? 'models' : randomSeed > 0 ? 'random' : 'browse'
+            }
             onAll={goAll}
-            onRandom={() => setRandomSeed((s) => s + 1)}
+            onRandom={() => {
+              setModelsView(false);
+              setRandomSeed((s) => s + 1);
+            }}
+            onModels={() => {
+              setRandomSeed(0);
+              setModelsView(true);
+            }}
             onSettings={() => setSettingsOpen(true)}
             filters={filters}
             onToggleFacet={toggleFacet}
             onClearFacets={clearFacets}
-            onToggleFavorite={() =>
+            onToggleFavorite={() => {
+              setModelsView(false);
               setFilters({
                 ...filters,
                 favorite: filters.favorite ? undefined : true,
-              })
-            }
-            onSelectPath={(p) => setFilters({ ...filters, pathPrefix: p })}
+              });
+            }}
+            onSelectPath={(p) => {
+              setModelsView(false);
+              setFilters({ ...filters, pathPrefix: p });
+            }}
           />
         )}
-        {hasRoots ? (
+        {hasRoots && modelsView ? (
+          <ModelGallery
+            onSelect={(id) => {
+              setModelsView(false);
+              setRandomSeed(0);
+              setFilters({ ...INITIAL_FILTERS, model: [id] });
+            }}
+          />
+        ) : hasRoots ? (
           <ArchiveGrid
             filters={filters}
             setFilters={setFilters}
