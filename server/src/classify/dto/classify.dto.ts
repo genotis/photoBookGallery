@@ -12,11 +12,31 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { ASSIGN_SOURCES, ASSIGN_TARGETS } from '../classify-tagging';
 
 const toBool = ({ value }: { value: unknown }) =>
   value === undefined ? undefined : value === true || value === 'true';
 
 export const MATCH_TYPES = ['regex', 'glob'] as const;
+
+/** 규칙의 태깅 액션 한 건. */
+export class AssignmentDto {
+  @IsIn(ASSIGN_TARGETS)
+  target!: string;
+
+  @IsIn(ASSIGN_SOURCES)
+  source!: string;
+
+  /** source=group 일 때 정규식 named group 이름. */
+  @IsOptional()
+  @IsString()
+  key?: string;
+
+  /** source=literal 일 때 리터럴 값. */
+  @IsOptional()
+  @IsString()
+  value?: string;
+}
 
 export class CreateClassifyRuleDto {
   @IsString()
@@ -44,9 +64,18 @@ export class CreateClassifyRuleDto {
   @MinLength(1)
   pattern!: string;
 
+  /** 이동 목적지 템플릿(루트 상대). 빈값/미지정이면 이동 안 함(태깅만). */
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  destTemplate!: string;
+  destTemplate?: string;
+
+  /** 태깅 액션 목록. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => AssignmentDto)
+  assignments?: AssignmentDto[];
 
   @IsOptional()
   @IsString()
@@ -92,8 +121,14 @@ export class PatchClassifyRuleDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(1)
   destTemplate?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => AssignmentDto)
+  assignments?: AssignmentDto[];
 
   @IsOptional()
   @IsString()
@@ -174,9 +209,16 @@ export class ImportRuleItemDto {
   @MinLength(1)
   pattern!: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  destTemplate!: string;
+  destTemplate?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => AssignmentDto)
+  assignments?: AssignmentDto[];
 
   @IsOptional()
   @IsString()

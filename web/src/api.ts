@@ -181,6 +181,21 @@ export interface BatchPayload {
   removeModels?: number[];
 }
 
+export type AssignTarget =
+  | 'country'
+  | 'model'
+  | 'publisher'
+  | 'series'
+  | 'title'
+  | 'tag';
+
+export interface RuleAssignment {
+  target: AssignTarget;
+  source: 'group' | 'literal';
+  key?: string;
+  value?: string;
+}
+
 export interface ClassifyRule {
   id: number;
   name: string;
@@ -190,6 +205,7 @@ export interface ClassifyRule {
   matchType: 'regex' | 'glob';
   pattern: string;
   destTemplate: string;
+  assignments: RuleAssignment[];
   scanCron: string | null;
   scheduleOn: boolean;
   batchLimit: number | null;
@@ -203,13 +219,14 @@ export interface ClassifyRuleInput {
   rootId?: number | null;
   matchType?: 'regex' | 'glob';
   pattern: string;
-  destTemplate: string;
+  destTemplate?: string;
+  assignments?: RuleAssignment[];
   scanCron?: string | null;
   scheduleOn?: boolean;
   batchLimit?: number | null;
 }
 
-export type ClassifyStatus = 'move' | 'noop' | 'conflict' | 'error' | 'nomatch';
+export type ClassifyStatus = 'move' | 'noop' | 'conflict' | 'error' | 'none';
 
 export interface ClassifyPreviewItem {
   archiveId: number;
@@ -218,6 +235,8 @@ export interface ClassifyPreviewItem {
   status: ClassifyStatus;
   ruleId: number | null;
   ruleName: string | null;
+  matchCount: number;
+  tagChanges: string[];
   rootId: number;
   rootLabel: string | null;
   rootPath: string;
@@ -229,6 +248,7 @@ export interface ClassifyPreviewItem {
 export interface ClassifyPreview {
   total: number;
   willMove: number;
+  willTag: number;
   sampled: number;
   items: ClassifyPreviewItem[];
 }
@@ -437,39 +457,7 @@ export const api = {
       title: string | null;
     }>(`/archives/${archiveId}/suggestions`),
 
-  autoTagPreview: (onlyMissing: boolean, sampleLimit = 20) =>
-    request<{
-      total: number;
-      sampled: number;
-      items: {
-        archiveId: number;
-        fileName: string;
-        current: {
-          title: string | null;
-          country: { id: number; code: string } | null;
-          publisher: { id: number; name: string } | null;
-          models: { id: number; name: string }[];
-        };
-        suggestion: {
-          title: string | null;
-          country: { code: string; existingId?: number } | null;
-          publisher: { name: string; existingId?: number } | null;
-          models: { name: string; aliases?: string[]; existingId?: number }[];
-        };
-        willChange: boolean;
-      }[];
-    }>('/auto-tag/preview', {
-      method: 'POST',
-      body: JSON.stringify({ onlyMissing, sampleLimit }),
-    }),
-
-  autoTagApply: (onlyMissing: boolean) =>
-    request<{ jobId: number }>('/auto-tag/apply', {
-      method: 'POST',
-      body: JSON.stringify({ onlyMissing }),
-    }),
-
-  // ---- 파일 분류 ----
+  // ---- 파일 분류 / 태깅 규칙 ----
   classifyRules: () => request<ClassifyRule[]>('/classify/rules'),
   createClassifyRule: (data: ClassifyRuleInput) =>
     request<ClassifyRule>('/classify/rules', {

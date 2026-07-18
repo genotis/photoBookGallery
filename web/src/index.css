@@ -2130,3 +2130,48 @@ ul.tree ul {
   font-size: 0.8rem;
   flex-shrink: 0;
 }
+
+/* ---- 태깅 액션(assignments) 에디터 ---- */
+.assign-editor {
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.6rem;
+  background: #16181c;
+  border: 1px solid #2a2e35;
+  border-radius: 8px;
+}
+.assign-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.assign-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+.assign-row select {
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+.assign-row .grow {
+  flex: 1;
+  min-width: 0;
+}
+.assign-del {
+  padding: 0.1rem 0.45rem;
+  flex-shrink: 0;
+}
+.assign-chip {
+  font-size: 0.74rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(95, 211, 155, 0.12);
+  color: #7fdcb0;
+  white-space: nowrap;
+}
+.suggest-chip.status-none {
+  background: rgba(120, 130, 145, 0.18);
+  color: #aab2bd;
+}

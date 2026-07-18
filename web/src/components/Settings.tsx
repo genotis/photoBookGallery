@@ -6,7 +6,6 @@ import {
 } from '@tanstack/react-query';
 import { api, Root } from '../api';
 import { AppPrefsPanel } from './AppPrefsPanel';
-import { AutoTagPanel } from './AutoTagPanel';
 import { ClassifyPanel } from './ClassifyPanel';
 import { DuplicatesPanel } from './DuplicatesPanel';
 import { ViewerBehaviorPanel } from './ViewerBehaviorPanel';
@@ -226,7 +225,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <RootsPanel />
           <AppPrefsPanel />
           <ViewerBehaviorPanel />
-          <AutoTagPanel />
           <ClassifyPanel />
           <DuplicatesPanel />
         </div>

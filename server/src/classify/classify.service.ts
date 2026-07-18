@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Archive, ClassifyRule, LibraryRoot } from '@prisma/client';
+import { Archive, ClassifyRule, LibraryRoot, Prisma } from '@prisma/client';
 import { Job as BullJob } from 'bullmq';
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
@@ -8,6 +8,7 @@ import { moveFile } from '../common/file.util';
 import { JobsService } from '../jobs/jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { dbJobIdFrom, QueueService } from '../queue/queue.service';
+import { SearchIndexService } from '../search/search-index.service';
 import {
   ClassifyApplyDto,
   ClassifyPreviewDto,
@@ -20,32 +21,49 @@ import {
   safeResolveUnderRoot,
   TemplateError,
 } from './classify.util';
+import {
+  Assignment,
+  buildTagPlan,
+  parseAssignments,
+  TagPlan,
+} from './classify-tagging';
 
 const QUEUE = 'classify';
 const QUEUE_REVERT = 'classify-revert';
 
 type RuleWithRoot = ClassifyRule & { root: LibraryRoot | null };
-type ArchiveWithRoot = Archive & { root: LibraryRoot };
+type ArchiveWithMeta = Archive & {
+  root: LibraryRoot;
+  country: { id: number; code: string } | null;
+  models: { modelId: number; model: { name: string } }[];
+  tags: { tagId: number; tag: { name: string } }[];
+};
 
 /** 컴파일된 규칙 — 매칭 엔진 내부 표현 */
 interface CompiledRule {
   rule: RuleWithRoot;
   re: RegExp;
+  assignments: Assignment[];
 }
 
-export type ResolveStatus =
+/** 한 아카이브에 매칭된 규칙 하나 + 그 규칙의 캡처 토큰. */
+interface RuleMatch {
+  rule: RuleWithRoot;
+  tokens: Record<string, string>;
+  assignments: Assignment[];
+}
+
+export type MoveStatus =
   | 'move' // 이동 필요
   | 'noop' // 이미 목적지에 있음
   | 'conflict' // 목적지에 동명 파일 존재
   | 'error' // 템플릿/경로/권한 문제로 이동 불가
-  | 'nomatch'; // 어떤 규칙에도 매칭 안 됨
+  | 'none'; // 이동 규칙 없음 (태깅만)
 
-export interface Resolution {
-  status: ResolveStatus;
+interface MoveResolution {
+  status: MoveStatus;
   rule: RuleWithRoot | null;
-  /** 최종 파일 절대경로 (move/noop/conflict 일 때) */
   destPath: string | null;
-  /** 루트 상대 목적지 디렉터리 (표시용) */
   destRel: string | null;
   message?: string;
 }
@@ -54,10 +72,14 @@ export interface ClassifyPreviewItem {
   archiveId: number;
   fileName: string;
   currentPath: string;
-  status: ResolveStatus;
+  /** 이동 상태. 'none' 이면 태깅만. */
+  status: MoveStatus;
   ruleId: number | null;
   ruleName: string | null;
-  /** 목적지가 속한 루트 (= 아카이브의 루트). 규칙이 "모든 루트" 대상일 때 특히 유용. */
+  /** 이 아카이브에 매칭된 규칙 수. */
+  matchCount: number;
+  /** 추가/설정될 태그·메타 (표시용 문자열). 예: ["국가:JP","모델:Aoyama","태그:AI"]. */
+  tagChanges: string[];
   rootId: number;
   rootLabel: string | null;
   rootPath: string;
@@ -67,8 +89,9 @@ export interface ClassifyPreviewItem {
 }
 
 export interface ClassifyPreview {
-  total: number; // 매칭되어 이동 대상이 되는 아카이브 수 (move + conflict + error)
+  total: number; // 변경(이동 또는 태깅) 대상 아카이브 수
   willMove: number;
+  willTag: number;
   sampled: number;
   items: ClassifyPreviewItem[];
 }
@@ -81,6 +104,13 @@ export interface ApplyStats {
   errors: number;
   /** batchLimit 로 이번 실행에서 미루어진(다음 실행 대상) 이동 건수. */
   remaining: number;
+  // 태깅
+  tagged: number; // 메타/태그가 바뀐 아카이브 수
+  newCountries: number;
+  newPublishers: number;
+  newSeries: number;
+  newModels: number;
+  newTags: number;
 }
 
 export interface RevertStats {
@@ -99,6 +129,7 @@ export class ClassifyService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly jobs: JobsService,
     private readonly queue: QueueService,
+    private readonly searchIndex: SearchIndexService,
   ) {}
 
   onModuleInit(): void {
@@ -129,7 +160,11 @@ export class ClassifyService implements OnModuleInit {
     const compiled: CompiledRule[] = [];
     for (const rule of rules) {
       try {
-        compiled.push({ rule, re: compileMatcher(rule.matchType, rule.pattern) });
+        compiled.push({
+          rule,
+          re: compileMatcher(rule.matchType, rule.pattern),
+          assignments: parseAssignments(rule.assignments),
+        });
       } catch (e) {
         this.logger.warn(
           `분류 규칙 컴파일 실패 (rule ${rule.id} "${rule.name}"): ${String(e)}`,
@@ -139,81 +174,124 @@ export class ClassifyService implements OnModuleInit {
     return compiled;
   }
 
-  /** 아카이브 하나에 대해 우선순위 첫 매칭 규칙을 찾아 목적지를 산출. */
-  private resolve(
-    archive: ArchiveWithRoot,
+  /** 아카이브에 매칭되는 모든 규칙(우선순위 순) + 각 규칙의 캡처 토큰. */
+  private matchAll(
+    archive: ArchiveWithMeta,
     rules: CompiledRule[],
-  ): Resolution {
-    for (const { rule, re } of rules) {
-      // 루트 필터 — rule.rootId 가 지정되면 해당 루트 아카이브만
+  ): RuleMatch[] {
+    const out: RuleMatch[] = [];
+    for (const { rule, re, assignments } of rules) {
       if (rule.rootId != null && rule.rootId !== archive.rootId) continue;
-
       const { matched, tokens } = matchFile(re, archive.fileName);
       if (!matched) continue;
-
-      // 첫 매칭 확정 — 이후 규칙은 보지 않는다 (우선순위 첫 매칭)
-      const root = archive.root;
-      if (root.readOnly) {
-        return {
-          status: 'error',
-          rule,
-          destPath: null,
-          destRel: null,
-          message: '읽기 전용 루트라 이동할 수 없습니다.',
-        };
-      }
-
-      let destRel: string;
-      try {
-        destRel = renderTemplate(rule.destTemplate, tokens);
-      } catch (e) {
-        const msg =
-          e instanceof TemplateError ? e.message : '템플릿 렌더링 실패';
-        return { status: 'error', rule, destPath: null, destRel: null, message: msg };
-      }
-
-      const destDir = safeResolveUnderRoot(root.path, destRel);
-      if (!destDir) {
-        return {
-          status: 'error',
-          rule,
-          destPath: null,
-          destRel,
-          message: '목적지가 루트를 벗어납니다.',
-        };
-      }
-
-      const destPath = join(destDir, archive.fileName);
-
-      // 이미 목적 디렉터리에 있으면 이동 불필요
-      if (dirname(archive.path) === destDir) {
-        return { status: 'noop', rule, destPath, destRel };
-      }
-      // 목적지에 동명 파일이 이미 있으면 덮어쓰지 않고 스킵
-      if (existsSync(destPath)) {
-        return {
-          status: 'conflict',
-          rule,
-          destPath,
-          destRel,
-          message: '목적지에 동명 파일이 있습니다.',
-        };
-      }
-      return { status: 'move', rule, destPath, destRel };
+      out.push({ rule, tokens, assignments });
     }
-    return { status: 'nomatch', rule: null, destPath: null, destRel: null };
+    return out;
   }
 
-  /** 후보 아카이브 (미싱 제외) + 루트 포함 로드. */
-  private loadCandidates(): Promise<ArchiveWithRoot[]> {
+  /**
+   * 이동 목적지 산출 — destTemplate 이 있는 첫 매칭 규칙 기준.
+   * 템플릿 토큰 = 그 규칙의 캡처 그룹 + 메타 토큰({country}=국가코드, {name}=첫 모델).
+   * 이동 규칙이 없으면 status='none'.
+   */
+  private resolveMove(
+    archive: ArchiveWithMeta,
+    matches: RuleMatch[],
+    plan: TagPlan,
+  ): MoveResolution {
+    const mv = matches.find((m) => m.rule.destTemplate.trim() !== '');
+    if (!mv) {
+      return { status: 'none', rule: null, destPath: null, destRel: null };
+    }
+    const rule = mv.rule;
+    const root = archive.root;
+    if (root.readOnly) {
+      return {
+        status: 'error',
+        rule,
+        destPath: null,
+        destRel: null,
+        message: '읽기 전용 루트라 이동할 수 없습니다.',
+      };
+    }
+
+    // 메타 토큰 — 이번 실행 태그 계획 우선, 없으면 기존 메타.
+    const metaTokens: Record<string, string> = { ...mv.tokens };
+    const country = plan.country ?? archive.country?.code;
+    const firstModel = plan.models[0] ?? archive.models[0]?.model.name;
+    if (country) metaTokens.country = country;
+    if (firstModel) metaTokens.name = firstModel;
+
+    let destRel: string;
+    try {
+      destRel = renderTemplate(rule.destTemplate, metaTokens);
+    } catch (e) {
+      const msg = e instanceof TemplateError ? e.message : '템플릿 렌더링 실패';
+      return { status: 'error', rule, destPath: null, destRel: null, message: msg };
+    }
+
+    const destDir = safeResolveUnderRoot(root.path, destRel);
+    if (!destDir) {
+      return {
+        status: 'error',
+        rule,
+        destPath: null,
+        destRel,
+        message: '목적지가 루트를 벗어납니다.',
+      };
+    }
+    const destPath = join(destDir, archive.fileName);
+    if (dirname(archive.path) === destDir) {
+      return { status: 'noop', rule, destPath, destRel };
+    }
+    if (existsSync(destPath)) {
+      return {
+        status: 'conflict',
+        rule,
+        destPath,
+        destRel,
+        message: '목적지에 동명 파일이 있습니다.',
+      };
+    }
+    return { status: 'move', rule, destPath, destRel };
+  }
+
+  /** 태그 계획 대비 실제로 바뀔 항목만 사람이 읽는 문자열로. (preview 표시용) */
+  private tagChangesFor(archive: ArchiveWithMeta, plan: TagPlan): string[] {
+    const out: string[] = [];
+    if (plan.country && !archive.countryId) out.push(`국가:${plan.country}`);
+    if (plan.publisher && !archive.publisherId)
+      out.push(`출판사:${plan.publisher}`);
+    if (plan.series && !archive.seriesId) out.push(`시리즈:${plan.series}`);
+    if (plan.title && !archive.title) out.push(`제목:${plan.title}`);
+    const haveModels = new Set(
+      archive.models.map((m) => m.model.name.toLowerCase()),
+    );
+    for (const n of plan.models) {
+      if (!haveModels.has(n.toLowerCase())) out.push(`모델:${n}`);
+    }
+    const haveTags = new Set(archive.tags.map((t) => t.tag.name.toLowerCase()));
+    for (const n of plan.tags) {
+      if (!haveTags.has(n.toLowerCase())) out.push(`태그:${n}`);
+    }
+    return out;
+  }
+
+  /** 후보 아카이브 (미싱 제외) + 루트·국가·모델·태그 포함 로드. */
+  private loadCandidates(): Promise<ArchiveWithMeta[]> {
     return this.prisma.archive.findMany({
       where: { missing: false },
-      include: { root: true },
+      include: {
+        root: true,
+        country: { select: { id: true, code: true } },
+        models: { select: { modelId: true, model: { select: { name: true } } } },
+        tags: { select: { tagId: true, tag: { select: { name: true } } } },
+      },
       orderBy: { id: 'asc' },
     });
   }
 
-  /** 변경 없이 어떤 아카이브가 어디로 이동할지 미리보기. */
+  /** 변경 없이 어떤 아카이브가 어떻게 태깅/이동될지 미리보기. */
   async preview(dto: ClassifyPreviewDto): Promise<ClassifyPreview> {
     const rules = await this.compileRules(dto.ruleIds, false);
     const candidates = await this.loadCandidates();
@@ -221,32 +299,47 @@ export class ClassifyService implements OnModuleInit {
 
     let total = 0;
     let willMove = 0;
+    let willTag = 0;
     const items: ClassifyPreviewItem[] = [];
 
     for (const a of candidates) {
-      const r = this.resolve(a, rules);
-      if (r.status === 'nomatch' || r.status === 'noop') continue;
+      const matches = this.matchAll(a, rules);
+      if (matches.length === 0) continue;
+
+      const plan = buildTagPlan(matches);
+      const tagChanges = this.tagChangesFor(a, plan);
+      const mv = this.resolveMove(a, matches, plan);
+
+      const movesFile = mv.status === 'move';
+      const hasMoveIssue = mv.status === 'conflict' || mv.status === 'error';
+      const changes = tagChanges.length > 0 || movesFile || hasMoveIssue;
+      if (!changes) continue; // noop 이동 + 태그 변경 없음 → 스킵
+
       total += 1;
-      if (r.status === 'move') willMove += 1;
+      if (movesFile) willMove += 1;
+      if (tagChanges.length > 0) willTag += 1;
+
       if (items.length < limit) {
         items.push({
           archiveId: a.id,
           fileName: a.fileName,
           currentPath: a.path,
-          status: r.status,
-          ruleId: r.rule?.id ?? null,
-          ruleName: r.rule?.name ?? null,
+          status: mv.status,
+          ruleId: mv.rule?.id ?? matches[0].rule.id,
+          ruleName: mv.rule?.name ?? matches[0].rule.name,
+          matchCount: matches.length,
+          tagChanges,
           rootId: a.rootId,
           rootLabel: a.root.label,
           rootPath: a.root.path,
-          destPath: r.destPath,
-          destRel: r.destRel,
-          message: r.message,
+          destPath: mv.destPath,
+          destRel: mv.destRel,
+          message: mv.message,
         });
       }
     }
 
-    return { total, willMove, sampled: items.length, items };
+    return { total, willMove, willTag, sampled: items.length, items };
   }
 
   /** DB Job 생성 + 큐 enqueue. 즉시 jobId 반환. */
@@ -276,12 +369,9 @@ export class ClassifyService implements OnModuleInit {
 
     const rules = await this.compileRules(dto.ruleIds, dto.force ?? false);
     const candidates = await this.loadCandidates();
+    const caches = await this.loadEntityCaches();
 
-    // 한 실행 최대 이동 건수.
-    // - dto.limit 이 명시되면 그대로 사용.
-    // - 아니면 단일 규칙 실행일 때 그 규칙의 batchLimit 을 자동 적용
-    //   (스케줄러·규칙별 실행·API 어떤 경로든 규칙 한도가 일관되게 걸리도록).
-    // - 여러 규칙을 한 번에 도는 "전체 적용"은 무제한.
+    // 한 실행 최대 이동 건수. dto.limit 우선, 아니면 단일 규칙의 batchLimit.
     const limit =
       dto.limit ?? (rules.length === 1 ? rules[0].rule.batchLimit ?? undefined : undefined);
 
@@ -292,20 +382,40 @@ export class ClassifyService implements OnModuleInit {
       conflicts: 0,
       errors: 0,
       remaining: 0,
+      tagged: 0,
+      newCountries: 0,
+      newPublishers: 0,
+      newSeries: 0,
+      newModels: 0,
+      newTags: 0,
     };
 
     for (let i = 0; i < candidates.length; i++) {
       const a = candidates[i];
-      const r = this.resolve(a, rules);
+      const matches = this.matchAll(a, rules);
+      if (matches.length === 0) continue;
+      stats.matched += 1;
+
+      const plan = buildTagPlan(matches);
+
+      // 1) 태깅 (누적) — 이동 여부와 무관하게 적용. 이미 분류된 파일도 태그가 채워짐.
       try {
-        switch (r.status) {
+        const changed = await this.applyTagPlan(a, plan, caches, stats);
+        if (changed) stats.tagged += 1;
+      } catch (e) {
+        stats.errors += 1;
+        this.logger.warn(`태깅 실패 archive=${a.id}: ${String(e)}`);
+      }
+
+      // 2) 이동 (첫 매칭 규칙 목적지)
+      const mv = this.resolveMove(a, matches, plan);
+      try {
+        switch (mv.status) {
           case 'move':
-            stats.matched += 1;
-            // 한도 도달 시 이동하지 않고 백로그로 집계 → 다음 실행에서 처리
             if (limit !== undefined && stats.moved >= limit) {
-              stats.remaining += 1;
+              stats.remaining += 1; // 한도 도달 → 다음 실행으로
             } else {
-              await this.performMove(a, r.destPath!, r.rule, jobId);
+              await this.performMove(a, mv.destPath!, mv.rule, jobId);
               stats.moved += 1;
             }
             break;
@@ -313,19 +423,17 @@ export class ClassifyService implements OnModuleInit {
             stats.noop += 1;
             break;
           case 'conflict':
-            stats.matched += 1;
             stats.conflicts += 1;
             this.logger.warn(
-              `분류 스킵(충돌) archive=${a.id}: ${r.message} → ${r.destPath}`,
+              `분류 스킵(충돌) archive=${a.id}: ${mv.message} → ${mv.destPath}`,
             );
             break;
           case 'error':
-            stats.matched += 1;
             stats.errors += 1;
-            this.logger.warn(`분류 스킵(오류) archive=${a.id}: ${r.message}`);
+            this.logger.warn(`분류 스킵(오류) archive=${a.id}: ${mv.message}`);
             break;
           default:
-            break; // nomatch
+            break; // none — 이동 규칙 없음
         }
       } catch (e) {
         stats.errors += 1;
@@ -337,7 +445,6 @@ export class ClassifyService implements OnModuleInit {
       }
     }
 
-    // 이번 실행에 참여한 규칙들의 lastRunAt 갱신
     const ranIds = rules.map((c) => c.rule.id);
     if (ranIds.length) {
       await this.prisma.classifyRule.updateMany({
@@ -352,10 +459,141 @@ export class ClassifyService implements OnModuleInit {
     });
     await this.jobs.done(jobId);
     this.logger.log(
-      `파일 분류 완료 (job ${jobId}): 이동 ${stats.moved}, 충돌 ${stats.conflicts}, ` +
-        `오류 ${stats.errors}, 제자리 ${stats.noop}` +
+      `분류 완료 (job ${jobId}): 태깅 ${stats.tagged}, 이동 ${stats.moved}, ` +
+        `충돌 ${stats.conflicts}, 오류 ${stats.errors}, 제자리 ${stats.noop}` +
         (stats.remaining > 0 ? `, 다음 실행 대기 ${stats.remaining}` : ''),
     );
+  }
+
+  /** 엔티티 이름→id 캐시 — 배치 내 중복 생성 방지. */
+  private async loadEntityCaches() {
+    const [countries, publishers, series, models, tags] = await Promise.all([
+      this.prisma.country.findMany({ select: { id: true, code: true } }),
+      this.prisma.publisher.findMany({ select: { id: true, name: true } }),
+      this.prisma.series.findMany({ select: { id: true, name: true } }),
+      this.prisma.model.findMany({ select: { id: true, name: true } }),
+      this.prisma.tag.findMany({ select: { id: true, name: true } }),
+    ]);
+    return {
+      country: new Map(countries.map((c) => [c.code.toUpperCase(), c.id])),
+      publisher: new Map(publishers.map((p) => [p.name.toLowerCase(), p.id])),
+      series: new Map(series.map((s) => [s.name.toLowerCase(), s.id])),
+      model: new Map(models.map((m) => [m.name.toLowerCase(), m.id])),
+      tag: new Map(tags.map((t) => [t.name.toLowerCase(), t.id])),
+    };
+  }
+
+  /**
+   * 태그 계획을 아카이브에 적용. 단일값(country/publisher/series/title)은
+   * 비어있을 때만 설정(수동 편집 보존), 다중값(model/tag)은 누적(중복 스킵).
+   * 없는 엔티티는 생성. 변경이 있었으면 true.
+   */
+  private async applyTagPlan(
+    archive: ArchiveWithMeta,
+    plan: TagPlan,
+    caches: Awaited<ReturnType<ClassifyService['loadEntityCaches']>>,
+    stats: ApplyStats,
+  ): Promise<boolean> {
+    let changed = false;
+    const data: Prisma.ArchiveUncheckedUpdateInput = {};
+
+    if (plan.country && !archive.countryId) {
+      const code = plan.country.toUpperCase();
+      let id = caches.country.get(code);
+      if (!id) {
+        id = (
+          await this.prisma.country.create({ data: { code, name: code } })
+        ).id;
+        caches.country.set(code, id);
+        stats.newCountries += 1;
+      }
+      data.countryId = id;
+      changed = true;
+    }
+    if (plan.publisher && !archive.publisherId) {
+      const key = plan.publisher.toLowerCase();
+      let id = caches.publisher.get(key);
+      if (!id) {
+        id = (
+          await this.prisma.publisher.create({ data: { name: plan.publisher } })
+        ).id;
+        caches.publisher.set(key, id);
+        stats.newPublishers += 1;
+      }
+      data.publisherId = id;
+      changed = true;
+    }
+    if (plan.series && !archive.seriesId) {
+      const key = plan.series.toLowerCase();
+      let id = caches.series.get(key);
+      if (!id) {
+        id = (
+          await this.prisma.series.create({ data: { name: plan.series } })
+        ).id;
+        caches.series.set(key, id);
+        stats.newSeries += 1;
+      }
+      data.seriesId = id;
+      changed = true;
+    }
+    if (plan.title && !archive.title) {
+      data.title = plan.title;
+      changed = true;
+    }
+
+    const haveModels = new Set(archive.models.map((m) => m.modelId));
+    const linkModels: number[] = [];
+    for (const name of plan.models) {
+      const key = name.toLowerCase();
+      let id = caches.model.get(key);
+      if (!id) {
+        id = (await this.prisma.model.create({ data: { name } })).id;
+        caches.model.set(key, id);
+        stats.newModels += 1;
+      }
+      if (!haveModels.has(id)) {
+        linkModels.push(id);
+        haveModels.add(id);
+        changed = true;
+      }
+    }
+
+    const haveTags = new Set(archive.tags.map((t) => t.tagId));
+    const linkTags: number[] = [];
+    for (const name of plan.tags) {
+      const key = name.toLowerCase();
+      let id = caches.tag.get(key);
+      if (!id) {
+        id = (await this.prisma.tag.create({ data: { name } })).id;
+        caches.tag.set(key, id);
+        stats.newTags += 1;
+      }
+      if (!haveTags.has(id)) {
+        linkTags.push(id);
+        haveTags.add(id);
+        changed = true;
+      }
+    }
+
+    if (Object.keys(data).length || linkModels.length || linkTags.length) {
+      await this.prisma.$transaction(async (tx) => {
+        if (Object.keys(data).length) {
+          await tx.archive.update({ where: { id: archive.id }, data });
+        }
+        if (linkModels.length) {
+          await tx.archiveModel.createMany({
+            data: linkModels.map((modelId) => ({ archiveId: archive.id, modelId })),
+          });
+        }
+        if (linkTags.length) {
+          await tx.archiveTag.createMany({
+            data: linkTags.map((tagId) => ({ archiveId: archive.id, tagId })),
+          });
+        }
+      });
+      if ('title' in data) await this.searchIndex.reindex(archive.id);
+    }
+    return changed;
   }
 
   /**
@@ -364,7 +602,7 @@ export class ClassifyService implements OnModuleInit {
    * 이동 성공 시 ClassifyMove 이력을 남겨 원복(undo) 가능하게 한다.
    */
   private async performMove(
-    archive: ArchiveWithRoot,
+    archive: ArchiveWithMeta,
     destPath: string,
     rule: RuleWithRoot | null,
     jobId: number,

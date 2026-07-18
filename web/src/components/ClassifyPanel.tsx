@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api,
+  AssignTarget,
   ClassifyPreview,
   ClassifyRule,
   ClassifyRuleInput,
+  RuleAssignment,
   Root,
 } from '../api';
 import { useJobStream } from './useJobStream';
@@ -14,14 +16,25 @@ const STATUS_LABEL: Record<string, string> = {
   conflict: '충돌',
   error: '오류',
   noop: '제자리',
-  nomatch: '매칭 없음',
+  none: '태깅만',
 };
+
+const TARGET_LABEL: Record<AssignTarget, string> = {
+  country: '국가',
+  model: '모델',
+  publisher: '출판사',
+  series: '시리즈',
+  title: '제목',
+  tag: '태그',
+};
+const TARGETS = Object.keys(TARGET_LABEL) as AssignTarget[];
 
 const EMPTY_FORM: ClassifyRuleInput = {
   name: '',
   matchType: 'regex',
   pattern: '',
   destTemplate: '',
+  assignments: [],
   priority: 0,
   enabled: true,
   rootId: null,
@@ -270,7 +283,21 @@ function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
               {rule.matchType === 'glob' ? 'glob' : 're'}: {rule.pattern}
             </code>
             <span className="classify-arrow">→</span>
-            <code className="classify-dest">{rule.destTemplate}</code>
+            {(rule.assignments ?? []).map((a, i) => (
+              <span key={i} className="assign-chip">
+                {TARGET_LABEL[a.target]}=
+                {a.source === 'group' ? `{${a.key}}` : a.value}
+              </span>
+            ))}
+            {rule.destTemplate ? (
+              <code className="classify-dest" title="이동 목적지">
+                📁 {rule.destTemplate}
+              </code>
+            ) : (
+              (rule.assignments ?? []).length === 0 && (
+                <span className="muted">액션 없음</span>
+              )
+            )}
           </div>
           <div className="classify-rule-meta muted small">
             <span>{rootLabel}</span>
@@ -358,6 +385,91 @@ function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
   );
 }
 
+function AssignmentsEditor({
+  assignments,
+  onChange,
+}: {
+  assignments: RuleAssignment[];
+  onChange: (a: RuleAssignment[]) => void;
+}) {
+  const update = (i: number, patch: Partial<RuleAssignment>) =>
+    onChange(assignments.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+  const add = () =>
+    onChange([
+      ...assignments,
+      { target: 'tag', source: 'group', key: '', value: '' },
+    ]);
+  const remove = (i: number) =>
+    onChange(assignments.filter((_, j) => j !== i));
+
+  return (
+    <div className="assign-editor">
+      <div className="assign-head">
+        <span className="behavior-label">태깅 (메타 채우기)</span>
+        <button type="button" className="ghost" onClick={add}>
+          + 액션
+        </button>
+      </div>
+      {assignments.length === 0 && (
+        <p className="muted small">
+          액션 없음 — 이동만 하려면 아래 목적지를 채우세요. 국가·모델·태그를 채우려면
+          액션을 추가하세요.
+        </p>
+      )}
+      {assignments.map((a, i) => (
+        <div key={i} className="assign-row">
+          <select
+            value={a.target}
+            onChange={(e) =>
+              update(i, { target: e.target.value as AssignTarget })
+            }
+            title="채울 필드"
+          >
+            {TARGETS.map((t) => (
+              <option key={t} value={t}>
+                {TARGET_LABEL[t]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={a.source}
+            onChange={(e) =>
+              update(i, { source: e.target.value as 'group' | 'literal' })
+            }
+            title="값의 출처"
+          >
+            <option value="group">그룹</option>
+            <option value="literal">리터럴</option>
+          </select>
+          {a.source === 'group' ? (
+            <input
+              className="grow"
+              value={a.key ?? ''}
+              placeholder="정규식 named group 이름 (예: country)"
+              onChange={(e) => update(i, { key: e.target.value })}
+            />
+          ) : (
+            <input
+              className="grow"
+              value={a.value ?? ''}
+              placeholder="고정 값 (예: AI)"
+              onChange={(e) => update(i, { value: e.target.value })}
+            />
+          )}
+          <button
+            type="button"
+            className="ghost assign-del"
+            onClick={() => remove(i)}
+            title="삭제"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RuleForm({
   form,
   setForm,
@@ -404,11 +516,15 @@ function RuleForm({
           />
         </label>
       </div>
+      <AssignmentsEditor
+        assignments={form.assignments ?? []}
+        onChange={(a) => set({ assignments: a })}
+      />
       <label>
-        목적지 템플릿 (루트 상대)
+        이동 목적지 템플릿 (선택 — 비우면 태깅만, 파일 이동 안 함)
         <input
-          value={form.destTemplate}
-          placeholder="예: {country}/{stem}"
+          value={form.destTemplate ?? ''}
+          placeholder="예: {country}/{name}  (비우면 이동 안 함)"
           onChange={(e) => set({ destTemplate: e.target.value })}
         />
       </label>
@@ -473,9 +589,9 @@ function RuleForm({
         처리합니다. 대량 이동으로 시스템에 부하가 가는 걸 막습니다.
       </p>
       <p className="muted small">
-        토큰: <code>{'{fileName}'}</code> <code>{'{stem}'}</code>{' '}
-        <code>{'{ext}'}</code> + 정규식 named group(<code>{'(?<name>…)'}</code>)
-        은 <code>{'{name}'}</code> 으로 사용.
+        경로 토큰: <code>{'{fileName}'}</code> <code>{'{stem}'}</code>{' '}
+        <code>{'{ext}'}</code> · 메타 토큰 <code>{'{country}'}</code>(국가코드){' '}
+        <code>{'{name}'}</code>(첫 모델) · 정규식 named group 은 그 이름으로.
       </p>
     </div>
   );
@@ -515,7 +631,8 @@ function AddRule({ roots }: { roots: Root[] }) {
             add.isPending ||
             !form.name.trim() ||
             !form.pattern.trim() ||
-            !form.destTemplate.trim()
+            (!form.destTemplate?.trim() &&
+              (form.assignments ?? []).length === 0)
           }
         >
           추가
@@ -680,11 +797,12 @@ export function ClassifyPanel() {
 
   return (
     <section className="settings-section">
-      <h4>파일 분류</h4>
+      <h4>분류 · 태깅 규칙</h4>
       <p className="muted small">
-        파일명 패턴에 매칭되는 아카이브를 목적지 템플릿이 산출한 하위 디렉터리로
-        이동하고 경로를 갱신합니다. 규칙은 우선순위 오름차순으로 평가되며 첫 매칭
-        규칙만 적용됩니다. 원본 내용은 바뀌지 않습니다.
+        정규식 스택으로 파일명을 매칭해 <strong>메타(국가·모델·태그·제목)를
+        채우고</strong>, 원하면 <strong>파일을 목적지로 이동</strong>합니다. 태깅은
+        매칭되는 모든 규칙이 누적되고, 이동은 목적지가 있는 첫 매칭 규칙 기준입니다.
+        이미 분류된 파일도 태그가 채워집니다. 원본 내용은 바뀌지 않습니다.
       </p>
 
       <ul className="classify-list">
@@ -714,7 +832,7 @@ export function ClassifyPanel() {
           onClick={() => {
             if (
               window.confirm(
-                '활성 규칙 전체를 적용해 매칭 파일을 이동합니다.\n실제 파일이 이동됩니다.',
+                '활성 규칙 전체를 적용합니다. 메타/태그가 채워지고, 목적지가 지정된 규칙은 파일을 이동합니다.',
               )
             ) {
               applyMut.mutate();
@@ -733,7 +851,8 @@ export function ClassifyPanel() {
       {preview && (
         <div className="auto-tag-preview">
           <p className="small">
-            대상 <strong>{preview.total}</strong>건 — 이동 예정{' '}
+            대상 <strong>{preview.total}</strong>건 — 태깅{' '}
+            <strong>{preview.willTag}</strong>건 · 이동{' '}
             <strong>{preview.willMove}</strong>건 / 샘플 {preview.sampled}건
           </p>
           <ul className="auto-tag-list">
@@ -746,6 +865,11 @@ export function ClassifyPanel() {
                   <span className={`suggest-chip status-${it.status}`}>
                     {STATUS_LABEL[it.status] ?? it.status}
                   </span>
+                  {it.tagChanges.map((c, i) => (
+                    <span key={i} className="suggest-chip new">
+                      {c}
+                    </span>
+                  ))}
                   {it.ruleName && (
                     <span className="muted small">[{it.ruleName}]</span>
                   )}
@@ -755,7 +879,7 @@ export function ClassifyPanel() {
                   >
                     🗂 {it.rootLabel ?? rootName(it.rootPath)}
                   </span>
-                  {it.destRel && (
+                  {it.destRel && it.status !== 'none' && (
                     <span className="classify-destrel" title={it.destPath ?? ''}>
                       → {it.destRel}/
                     </span>
@@ -772,7 +896,7 @@ export function ClassifyPanel() {
               </li>
             )}
             {preview.items.length === 0 && (
-              <li className="muted small">이동 대상이 없습니다.</li>
+              <li className="muted small">변경 대상이 없습니다.</li>
             )}
           </ul>
         </div>
@@ -798,8 +922,8 @@ function MoveStats({ payload }: { payload: string | undefined | null }) {
   if (!stats) return <div className="job done">완료 ✓</div>;
   return (
     <div className="job done">
-      완료 — 이동 {stats.moved} · 충돌 {stats.conflicts} · 오류 {stats.errors} ·
-      제자리 {stats.noop}
+      완료 — 태깅 {stats.tagged} · 이동 {stats.moved} · 충돌 {stats.conflicts} ·
+      오류 {stats.errors} · 제자리 {stats.noop}
       {stats.remaining > 0 && (
         <span className="classify-backlog">
           {' '}
@@ -826,10 +950,12 @@ function toForm(rule: ClassifyRule): ClassifyRuleInput {
     scanCron: rule.scanCron,
     scheduleOn: rule.scheduleOn,
     batchLimit: rule.batchLimit,
+    assignments: rule.assignments ?? [],
   };
 }
 
 function parseStats(payload: string | undefined | null): {
+  tagged: number;
   moved: number;
   conflicts: number;
   errors: number;
@@ -840,6 +966,7 @@ function parseStats(payload: string | undefined | null): {
   try {
     const obj = JSON.parse(payload) as {
       stats?: {
+        tagged?: number;
         moved?: number;
         conflicts?: number;
         errors?: number;
@@ -849,6 +976,7 @@ function parseStats(payload: string | undefined | null): {
     };
     if (!obj.stats) return null;
     return {
+      tagged: obj.stats.tagged ?? 0,
       moved: obj.stats.moved ?? 0,
       conflicts: obj.stats.conflicts ?? 0,
       errors: obj.stats.errors ?? 0,

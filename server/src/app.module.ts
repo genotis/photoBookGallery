@@ -23,7 +23,6 @@ import { ModelsModule } from './models/models.module';
 import { SearchModule } from './search/search.module';
 import { TreeModule } from './tree/tree.module';
 import { RepackModule } from './repack/repack.module';
-import { AutoTagModule } from './auto-tag/auto-tag.module';
 import { ClassifyModule } from './classify/classify.module';
 import { DuplicatesModule } from './duplicates/duplicates.module';
 
@@ -67,7 +66,6 @@ const isProd = process.env.NODE_ENV === 'production';
     SearchModule,
     TreeModule,
     RepackModule,
-    AutoTagModule,
     ClassifyModule,
     DuplicatesModule,
   ],

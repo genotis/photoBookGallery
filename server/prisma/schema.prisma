@@ -37,7 +37,10 @@ model ClassifyRule {
   root         LibraryRoot? @relation(fields: [rootId], references: [id], onDelete: Cascade)
   matchType    String       @default("regex") // regex | glob (파일명 기준)
   pattern      String // 파일명 매칭 패턴
-  destTemplate String // 대상 하위경로 템플릿 (루트 상대). 예: "{country}/{stem}"
+  // 태깅 액션 — JSON 배열. 각 항목 { target, source, key?, value? }.
+  // target: country|model|publisher|series|title|tag, source: group|literal.
+  assignments  String? // null/[] 이면 태깅 없음
+  destTemplate String       @default("") // 대상 하위경로 템플릿 (루트 상대). 빈값이면 이동 안 함(태깅만).
   scanCron     String? // 규칙별 cron 식. null 이면 스케줄 없음.
   scheduleOn   Boolean      @default(false) // 스케줄 온/오프 토글
   batchLimit   Int? // 한 실행에서 이동할 최대 건수. null 이면 무제한. 나머지는 다음 실행에서.
