@@ -160,6 +160,11 @@ export class ClassifyPreviewDto {
   @Min(1)
   @Max(500)
   sampleLimit?: number = 50;
+
+  /** 대상 폴더(경로 접두) — 이 폴더 하위 아카이브에만 적용. 미지정이면 전체. */
+  @IsOptional()
+  @IsString()
+  pathPrefix?: string;
 }
 
 export class ClassifyApplyDto {
@@ -183,6 +188,11 @@ export class ClassifyApplyDto {
   @IsInt()
   @Min(1)
   limit?: number;
+
+  /** 대상 폴더(경로 접두) — 이 폴더 하위 아카이브에만 적용. 미지정이면 전체. */
+  @IsOptional()
+  @IsString()
+  pathPrefix?: string;
 }
 
 export const IMPORT_MODES = ['merge', 'replace'] as const;

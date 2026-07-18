@@ -471,15 +471,20 @@ export const api = {
     }),
   removeClassifyRule: (id: number) =>
     request<{ ok: true }>(`/classify/rules/${id}`, { method: 'DELETE' }),
-  classifyPreview: (ruleIds?: number[], sampleLimit = 50) =>
+  classifyPreview: (ruleIds?: number[], sampleLimit = 50, pathPrefix?: string) =>
     request<ClassifyPreview>('/classify/preview', {
       method: 'POST',
-      body: JSON.stringify({ ruleIds, sampleLimit }),
+      body: JSON.stringify({ ruleIds, sampleLimit, pathPrefix }),
     }),
-  classifyApply: (ruleIds?: number[], force = false, limit?: number) =>
+  classifyApply: (
+    ruleIds?: number[],
+    force = false,
+    limit?: number,
+    pathPrefix?: string,
+  ) =>
     request<{ jobId: number }>('/classify/apply', {
       method: 'POST',
-      body: JSON.stringify({ ruleIds, force, limit }),
+      body: JSON.stringify({ ruleIds, force, limit, pathPrefix }),
     }),
   classifyExport: () =>
     request<{

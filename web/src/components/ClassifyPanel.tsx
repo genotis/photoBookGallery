@@ -9,6 +9,7 @@ import {
   RuleAssignment,
   Root,
 } from '../api';
+import { PathBrowser } from './PathBrowser';
 import { useJobStream } from './useJobStream';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -61,6 +62,12 @@ function shortPath(p: string): string {
 function rootName(p: string): string {
   const parts = p.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? p;
+}
+
+/** 대상 폴더 표시용 — 마지막 2조각. */
+function folderTail(p: string): string {
+  const parts = p.split('/').filter(Boolean);
+  return parts.slice(-2).join('/') || p;
 }
 
 function HistorySection() {
@@ -775,13 +782,15 @@ export function ClassifyPanel() {
   const roots = useQuery({ queryKey: ['roots'], queryFn: api.roots });
   const [preview, setPreview] = useState<ClassifyPreview | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
+  // 대상 폴더 — 이 폴더 하위 아카이브에만 미리보기·적용. undefined = 전체.
+  const [targetPath, setTargetPath] = useState<string | undefined>(undefined);
 
   const previewMut = useMutation({
-    mutationFn: () => api.classifyPreview(undefined, 50),
+    mutationFn: () => api.classifyPreview(undefined, 50, targetPath),
     onSuccess: (data) => setPreview(data),
   });
   const applyMut = useMutation({
-    mutationFn: () => api.classifyApply(undefined, false),
+    mutationFn: () => api.classifyApply(undefined, false, undefined, targetPath),
     onSuccess: ({ jobId }) => setJobId(jobId),
   });
 
@@ -818,6 +827,31 @@ export function ClassifyPanel() {
 
       <BackupSection />
 
+      <details className="classify-target">
+        <summary>
+          대상 폴더:{' '}
+          <strong>{targetPath ? folderTail(targetPath) : '전체'}</strong>
+          {targetPath && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={(e) => {
+                e.preventDefault();
+                setTargetPath(undefined);
+              }}
+              title="대상 폴더 해제 (전체)"
+            >
+              ✕
+            </button>
+          )}
+        </summary>
+        <p className="muted small">
+          선택한 폴더 하위 아카이브에만 아래 미리보기·적용이 실행됩니다. (규칙 자체의
+          루트 지정과 별개 — 이건 이번 실행 범위)
+        </p>
+        <PathBrowser selectedPath={targetPath} onSelect={setTargetPath} />
+      </details>
+
       <div className="auto-tag-actions">
         <button
           type="button"
@@ -832,7 +866,7 @@ export function ClassifyPanel() {
           onClick={() => {
             if (
               window.confirm(
-                '활성 규칙 전체를 적용합니다. 메타/태그가 채워지고, 목적지가 지정된 규칙은 파일을 이동합니다.',
+                `활성 규칙 전체를 적용합니다 (대상: ${targetPath ? folderTail(targetPath) : '전체'}). 메타/태그가 채워지고, 목적지가 지정된 규칙은 파일을 이동합니다.`,
               )
             ) {
               applyMut.mutate();

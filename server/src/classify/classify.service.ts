@@ -277,10 +277,18 @@ export class ClassifyService implements OnModuleInit {
     return out;
   }
 
-  /** 후보 아카이브 (미싱 제외) + 루트·국가·모델·태그 포함 로드. */
-  private loadCandidates(): Promise<ArchiveWithMeta[]> {
+  /**
+   * 후보 아카이브 (미싱 제외) + 루트·국가·모델·태그 포함 로드.
+   * pathPrefix 가 주어지면 그 폴더 하위 아카이브만.
+   */
+  private loadCandidates(pathPrefix?: string): Promise<ArchiveWithMeta[]> {
+    const where: Prisma.ArchiveWhereInput = { missing: false };
+    const p = pathPrefix?.trim();
+    if (p) {
+      where.path = { startsWith: p.endsWith('/') ? p : p + '/' };
+    }
     return this.prisma.archive.findMany({
-      where: { missing: false },
+      where,
       include: {
         root: true,
         country: { select: { id: true, code: true } },
@@ -294,7 +302,7 @@ export class ClassifyService implements OnModuleInit {
   /** 변경 없이 어떤 아카이브가 어떻게 태깅/이동될지 미리보기. */
   async preview(dto: ClassifyPreviewDto): Promise<ClassifyPreview> {
     const rules = await this.compileRules(dto.ruleIds, false);
-    const candidates = await this.loadCandidates();
+    const candidates = await this.loadCandidates(dto.pathPrefix);
     const limit = dto.sampleLimit ?? 50;
 
     let total = 0;
@@ -348,6 +356,7 @@ export class ClassifyService implements OnModuleInit {
       ruleIds: dto.ruleIds ?? null,
       force: dto.force ?? false,
       limit: dto.limit ?? null,
+      pathPrefix: dto.pathPrefix ?? null,
     });
     await this.queue.enqueue<ClassifyApplyDto>(QUEUE, job.id, dto);
     return job.id;
@@ -368,7 +377,7 @@ export class ClassifyService implements OnModuleInit {
     await this.jobs.start(jobId);
 
     const rules = await this.compileRules(dto.ruleIds, dto.force ?? false);
-    const candidates = await this.loadCandidates();
+    const candidates = await this.loadCandidates(dto.pathPrefix);
     const caches = await this.loadEntityCaches();
 
     // 한 실행 최대 이동 건수. dto.limit 우선, 아니면 단일 규칙의 batchLimit.

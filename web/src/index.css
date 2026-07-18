@@ -2175,3 +2175,27 @@ ul.tree ul {
   background: rgba(120, 130, 145, 0.18);
   color: #aab2bd;
 }
+
+/* ---- 분류 대상 폴더 ---- */
+.classify-target {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.6rem;
+  background: #16181c;
+  border: 1px solid #2a2e35;
+  border-radius: 8px;
+}
+.classify-target > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #cfd4da;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.classify-target > summary strong {
+  color: #8ab8e6;
+}
+.classify-target > summary button {
+  padding: 0 0.4rem;
+  margin-left: auto;
+}
