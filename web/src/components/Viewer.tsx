@@ -82,6 +82,7 @@ export function Viewer({
   onNavigateArchive,
   hasPrev = false,
   hasNext = false,
+  metaOpen = false,
 }: {
   archive: ArchiveListItem;
   onClose: () => void;
@@ -90,6 +91,8 @@ export function Viewer({
   onNavigateArchive?: (delta: number) => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  /** 메타 패널이 위에 열려 있으면 뷰어 키보드(Esc·페이지 이동)를 비활성화. */
+  metaOpen?: boolean;
 }) {
   const qc = useQueryClient();
   const entries = useQuery({
@@ -174,6 +177,9 @@ export function Viewer({
   // 키보드 — RTL 일 때 좌우 의미 반전
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 메타 패널이 위에 열려 있으면 뷰어는 키를 처리하지 않는다
+      // (Esc 는 메타가 처리, 텍스트 입력 중 페이지 이동/닫힘 방지).
+      if (metaOpen) return;
       if (e.key === 'Escape') {
         if (selectMode) {
           setSelectMode(false);
@@ -203,7 +209,7 @@ export function Viewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dir, go, index, view, onClose, selectMode, toggle, hasPrev, hasNext, onNavigateArchive]);
+  }, [dir, go, index, view, onClose, selectMode, toggle, hasPrev, hasNext, onNavigateArchive, metaOpen]);
 
   // 프리로딩 (단일/가로 모드) — 인접 페이지 즉시
   useEffect(() => {

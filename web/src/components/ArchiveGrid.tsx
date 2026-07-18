@@ -243,10 +243,9 @@ export function ArchiveGrid({
             <Viewer
               archive={viewer}
               onClose={() => setViewer(null)}
-              onEdit={() => {
-                setEditingId(viewer.id);
-                setViewer(null);
-              }}
+              // 뷰어를 닫지 않고 메타 패널을 위에 오버레이 → 닫으면 뷰어로 복귀.
+              onEdit={() => setEditingId(viewer.id)}
+              metaOpen={editingId !== null}
               onNavigateArchive={navigateArchive}
               hasPrev={hasPrev}
               hasNext={hasNext}

@@ -277,6 +277,16 @@ export function MetaPanel({
     });
   }, [detail.data]);
 
+  // Esc 로 메타 패널 닫기. 뷰어 위에 오버레이될 때 뷰어의 Esc 는 비활성화되므로
+  // (metaOpen) 이 핸들러가 최상위 오버레이를 담당한다.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const save = useMutation({
     mutationFn: () => {
       if (!form) throw new Error('not ready');
