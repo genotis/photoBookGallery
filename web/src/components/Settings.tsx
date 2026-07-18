@@ -7,6 +7,7 @@ import {
 import { api, Root } from '../api';
 import { AppPrefsPanel } from './AppPrefsPanel';
 import { AutoTagPanel } from './AutoTagPanel';
+import { ClassifyPanel } from './ClassifyPanel';
 import { DuplicatesPanel } from './DuplicatesPanel';
 import { ViewerBehaviorPanel } from './ViewerBehaviorPanel';
 import { useJobStream } from './useJobStream';
@@ -226,6 +227,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <AppPrefsPanel />
           <ViewerBehaviorPanel />
           <AutoTagPanel />
+          <ClassifyPanel />
           <DuplicatesPanel />
         </div>
       </aside>

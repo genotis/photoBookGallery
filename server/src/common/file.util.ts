@@ -1,3 +1,4 @@
+import { copyFile, rename, unlink } from 'fs/promises';
 import { extname } from 'path';
 
 export const ARCHIVE_FORMATS = ['zip', 'cbz', 'rar', 'cbr'] as const;
@@ -51,4 +52,16 @@ const collator = new Intl.Collator(undefined, {
 /** 자연 정렬 비교 (page2 < page10). */
 export function naturalCompare(a: string, b: string): number {
   return collator.compare(a, b);
+}
+
+/** 같은 파일시스템이면 원자 rename, 파일시스템이 다르면(EXDEV) copy+unlink. */
+export async function moveFile(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EXDEV') throw err;
+    await copyFile(from, to);
+    await unlink(from);
+  }
 }

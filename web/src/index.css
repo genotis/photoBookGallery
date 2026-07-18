@@ -1907,3 +1907,136 @@ ul.tree ul {
     font-size: 0.78rem;
   }
 }
+
+/* ---- 파일 분류 ---- */
+.classify-list {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.classify-rule {
+  padding: 0.6rem 0.7rem;
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 8px;
+}
+.classify-rule.disabled {
+  opacity: 0.55;
+}
+.classify-rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.classify-rule-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.4rem 0;
+}
+.classify-pat,
+.classify-dest {
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: #24282f;
+  color: #cfd4da;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+.classify-dest {
+  color: #8ab8e6;
+}
+.classify-arrow {
+  color: #5fd39b;
+}
+.classify-rule-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.classify-form .classify-form-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.classify-form .classify-form-row .grow {
+  flex: 1;
+}
+.classify-add {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.7rem;
+  background: #1c1f24;
+  border: 1px dashed #2a2e35;
+  border-radius: 8px;
+}
+.classify-destrel {
+  color: #8ab8e6;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+.suggest-chip.status-move {
+  background: rgba(95, 158, 217, 0.14);
+  color: #8ab8e6;
+}
+.suggest-chip.status-conflict {
+  background: rgba(230, 184, 95, 0.16);
+  color: #e6c07b;
+}
+.suggest-chip.status-error {
+  background: rgba(230, 95, 95, 0.16);
+  color: #e68a8a;
+}
+.auto-tag-list > li.conflict {
+  border-color: rgba(230, 184, 95, 0.4);
+}
+.auto-tag-list > li.error {
+  border-color: rgba(230, 95, 95, 0.4);
+}
+
+/* ---- 파일 분류 이력/원복 ---- */
+.classify-history {
+  margin-top: 0.8rem;
+  border-top: 1px solid #2a2e35;
+  padding-top: 0.6rem;
+}
+.classify-history > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #cfd4da;
+}
+.classify-history-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.classify-history-list > li {
+  padding: 0.45rem 0.55rem;
+  background: #1c1f24;
+  border: 1px solid #2a2e35;
+  border-radius: 8px;
+}
+.classify-history-list > li.reverted {
+  opacity: 0.55;
+}
+.classify-revert-btn {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  margin-left: auto;
+}
+
+.classify-root-chip {
+  font-size: 0.74rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  background: #24282f;
+  color: #b7bdc6;
+  white-space: nowrap;
+}

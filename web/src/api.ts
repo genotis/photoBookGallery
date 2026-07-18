@@ -179,6 +179,71 @@ export interface BatchPayload {
   removeModels?: number[];
 }
 
+export interface ClassifyRule {
+  id: number;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  rootId: number | null;
+  matchType: 'regex' | 'glob';
+  pattern: string;
+  destTemplate: string;
+  scanCron: string | null;
+  scheduleOn: boolean;
+  lastRunAt: string | null;
+}
+
+export interface ClassifyRuleInput {
+  name: string;
+  priority?: number;
+  enabled?: boolean;
+  rootId?: number | null;
+  matchType?: 'regex' | 'glob';
+  pattern: string;
+  destTemplate: string;
+  scanCron?: string | null;
+  scheduleOn?: boolean;
+}
+
+export type ClassifyStatus = 'move' | 'noop' | 'conflict' | 'error' | 'nomatch';
+
+export interface ClassifyPreviewItem {
+  archiveId: number;
+  fileName: string;
+  currentPath: string;
+  status: ClassifyStatus;
+  ruleId: number | null;
+  ruleName: string | null;
+  rootId: number;
+  rootLabel: string | null;
+  rootPath: string;
+  destPath: string | null;
+  destRel: string | null;
+  message?: string;
+}
+
+export interface ClassifyPreview {
+  total: number;
+  willMove: number;
+  sampled: number;
+  items: ClassifyPreviewItem[];
+}
+
+export interface ClassifyMove {
+  id: number;
+  archiveId: number;
+  contentHash: string;
+  fileName: string;
+  fromPath: string;
+  toPath: string;
+  jobId: number | null;
+  ruleId: number | null;
+  ruleName: string | null;
+  status: 'moved' | 'reverted';
+  createdAt: string;
+  revertedAt: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: 'include',
@@ -384,6 +449,38 @@ export const api = {
     request<{ jobId: number }>('/auto-tag/apply', {
       method: 'POST',
       body: JSON.stringify({ onlyMissing }),
+    }),
+
+  // ---- 파일 분류 ----
+  classifyRules: () => request<ClassifyRule[]>('/classify/rules'),
+  createClassifyRule: (data: ClassifyRuleInput) =>
+    request<ClassifyRule>('/classify/rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  patchClassifyRule: (id: number, data: Partial<ClassifyRuleInput>) =>
+    request<ClassifyRule>(`/classify/rules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  removeClassifyRule: (id: number) =>
+    request<{ ok: true }>(`/classify/rules/${id}`, { method: 'DELETE' }),
+  classifyPreview: (ruleIds?: number[], sampleLimit = 50) =>
+    request<ClassifyPreview>('/classify/preview', {
+      method: 'POST',
+      body: JSON.stringify({ ruleIds, sampleLimit }),
+    }),
+  classifyApply: (ruleIds?: number[], force = false) =>
+    request<{ jobId: number }>('/classify/apply', {
+      method: 'POST',
+      body: JSON.stringify({ ruleIds, force }),
+    }),
+  classifyHistory: (limit = 200) =>
+    request<ClassifyMove[]>(`/classify/history?limit=${limit}`),
+  classifyRevert: (payload: { moveIds?: number[]; jobId?: number }) =>
+    request<{ jobId: number }>('/classify/revert', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   duplicatesScan: () =>

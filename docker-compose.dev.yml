@@ -1,0 +1,67 @@
+# 로컬 개발/시연용 풀 스택 — 앱(pbg) + Redis 를 모두 도커로 기동한다.
+#
+# 프로덕션 docker-compose.yml 은 Synology NAS 경로(/volume1, /volume4)에
+# 바인드 마운트하므로 로컬 Mac 에서는 "mounts denied" 로 실패한다.
+# 이 파일은 NAS 경로 대신 로컬 dev-data + 도커 관리 named volume 을 써서
+# 로컬에서 그대로 동작한다.
+#
+# 사용:
+#   docker compose -f docker-compose.dev.yml up -d --build   # 빌드 + 기동
+#   docker compose -f docker-compose.dev.yml logs -f pbg      # 앱 로그
+#   docker compose -f docker-compose.dev.yml down             # 중지 (데이터 유지)
+#   docker compose -f docker-compose.dev.yml down -v          # 중지 + 볼륨 삭제
+#
+# 접속: http://localhost:8021  (컨테이너 3000 → 호스트 8021)
+# 미디어 루트는 앱 UI 에서 "/media" 로 등록 후 스캔.
+#
+# 호스트에서 `npm run dev` 로 개발할 때는 아래 pbg 서비스 없이 redis 만 쓰면 된다:
+#   docker compose -f docker-compose.dev.yml up -d redis
+
+services:
+  pbg:
+    build: .
+    image: photobookgallery:dev
+    container_name: photobookgallery
+    ports:
+      # 호스트 8021 → 컨테이너 3000
+      - "8021:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/pbg.db
+      - PBG_AUTH_PASSWORD=${PBG_AUTH_PASSWORD:-change_me}
+      - PBG_SESSION_SECRET=${PBG_SESSION_SECRET:-local_dev_session_secret_change_me_please}
+      - PBG_BACKUP_DIR=/app/backups
+      - PBG_CACHE_DIR=/app/cache
+      - REDIS_URL=redis://redis:6379
+      # 로컬 Mac 사용자에 맞춘 UID/GID — 바인드 마운트(/media)에 쓰기 위해.
+      - PUID=${PUID:-502}
+      - PGID=${PGID:-20}
+      - TZ=${TZ:-Asia/Seoul}
+    volumes:
+      # 로컬 샘플 미디어 — classify 가 파일을 이동하므로 RW.
+      - ./dev-data/photobooks:/media
+      # DB / 캐시 / 백업 — 도커 named volume (호스트 경로 불필요)
+      - pbg-data:/app/data
+      - pbg-cache:/app/cache
+      - pbg-backups:/app/backups
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pbg-redis
+    # AOF 활성화 — 재시작 시 진행 중 작업 큐 보존 (프로덕션과 동일 설정)
+    command: ["redis-server", "--appendonly", "yes", "--save", ""]
+    ports:
+      # 호스트 6379 → 컨테이너 6379 (호스트 `npm run dev` 도 접속 가능)
+      - "6379:6379"
+    volumes:
+      - pbg-redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  pbg-data:
+  pbg-cache:
+  pbg-backups:
+  pbg-redis-data:

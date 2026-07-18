@@ -15,13 +15,60 @@ generator client {
 }
 
 model LibraryRoot {
-  id        Int       @id @default(autoincrement())
-  path      String    @unique // NAS 절대경로 (컨테이너 기준)
-  label     String?
-  readOnly  Boolean   @default(false) // 편집 허용 여부
-  scanCron  String? // 자동 스캔 cron 식 (예: "0 3 * * *"). null 이면 수동.
-  archives  Archive[]
-  createdAt DateTime  @default(now())
+  id            Int            @id @default(autoincrement())
+  path          String         @unique // NAS 절대경로 (컨테이너 기준)
+  label         String?
+  readOnly      Boolean        @default(false) // 편집 허용 여부
+  scanCron      String? // 자동 스캔 cron 식 (예: "0 3 * * *"). null 이면 수동.
+  archives      Archive[]
+  classifyRules ClassifyRule[]
+  createdAt     DateTime       @default(now())
+}
+
+// 파일명 패턴 기반 분류 규칙.
+// 매칭된 아카이브를 destTemplate 이 산출한 (루트 상대) 하위경로로 물리 이동하고
+// DB path 를 갱신한다. 우선순위(priority) 오름차순으로 평가, 첫 매칭 규칙만 적용.
+model ClassifyRule {
+  id           Int          @id @default(autoincrement())
+  name         String
+  priority     Int          @default(0) // 낮을수록 먼저 평가 (우선순위 첫 매칭)
+  enabled      Boolean      @default(true) // 규칙 자체 사용 여부
+  rootId       Int? // null = 모든 루트 대상. 지정 시 해당 루트의 아카이브만.
+  root         LibraryRoot? @relation(fields: [rootId], references: [id], onDelete: Cascade)
+  matchType    String       @default("regex") // regex | glob (파일명 기준)
+  pattern      String // 파일명 매칭 패턴
+  destTemplate String // 대상 하위경로 템플릿 (루트 상대). 예: "{country}/{stem}"
+  scanCron     String? // 규칙별 cron 식. null 이면 스케줄 없음.
+  scheduleOn   Boolean      @default(false) // 스케줄 온/오프 토글
+  lastRunAt    DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([priority])
+  @@index([rootId])
+}
+
+// 분류 이동 이력 — 원복(undo) 가능하도록 각 이동을 기록.
+// 규칙/잡이 삭제돼도 이력이 남도록 이름은 스냅샷으로 보관하고 FK 는 두지 않는다.
+// 식별은 contentHash(내용 불변) 기준 — 이동/원복 후에도 아카이브를 다시 찾을 수 있다.
+model ClassifyMove {
+  id          Int       @id @default(autoincrement())
+  archiveId   Int // 이동 당시 아카이브 id (참조용)
+  contentHash String // 안정 식별자 (이동은 내용 불변)
+  fileName    String
+  fromPath    String // 이동 전 절대경로
+  toPath      String // 이동 후 절대경로
+  jobId       Int? // 이 이동을 만든 apply job
+  ruleId      Int? // 적용된 규칙 (삭제될 수 있음)
+  ruleName    String? // 규칙 이름 스냅샷
+  status      String    @default("moved") // moved | reverted
+  createdAt   DateTime  @default(now())
+  revertedAt  DateTime?
+
+  @@index([jobId])
+  @@index([archiveId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model Archive {

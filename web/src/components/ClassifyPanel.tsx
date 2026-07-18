@@ -1,0 +1,707 @@
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  api,
+  ClassifyPreview,
+  ClassifyRule,
+  ClassifyRuleInput,
+  Root,
+} from '../api';
+import { useJobStream } from './useJobStream';
+
+const STATUS_LABEL: Record<string, string> = {
+  move: '이동',
+  conflict: '충돌',
+  error: '오류',
+  noop: '제자리',
+  nomatch: '매칭 없음',
+};
+
+const EMPTY_FORM: ClassifyRuleInput = {
+  name: '',
+  matchType: 'regex',
+  pattern: '',
+  destTemplate: '',
+  priority: 0,
+  enabled: true,
+  rootId: null,
+  scanCron: null,
+  scheduleOn: false,
+};
+
+function invalidateAfterMove(qc: ReturnType<typeof useQueryClient>): void {
+  qc.invalidateQueries({ queryKey: ['archives'] });
+  qc.invalidateQueries({ queryKey: ['facets'] });
+  qc.invalidateQueries({ queryKey: ['tree'] });
+  qc.invalidateQueries({ queryKey: ['classifyRules'] });
+  qc.invalidateQueries({ queryKey: ['classifyHistory'] });
+}
+
+/** 절대경로에서 표시용 짧은 경로(마지막 2조각)만 남긴다. */
+function shortPath(p: string): string {
+  const parts = p.split('/').filter(Boolean);
+  return parts.slice(-2).join('/');
+}
+
+/** 라벨 없는 루트의 표시명 — 경로 마지막 조각. */
+function rootName(p: string): string {
+  const parts = p.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
+
+function HistorySection() {
+  const qc = useQueryClient();
+  const history = useQuery({
+    queryKey: ['classifyHistory'],
+    queryFn: () => api.classifyHistory(200),
+  });
+  const [jobId, setJobId] = useState<number | null>(null);
+
+  const revert = useMutation({
+    mutationFn: (payload: { moveIds?: number[]; jobId?: number }) =>
+      api.classifyRevert(payload),
+    onSuccess: ({ jobId }) => setJobId(jobId),
+  });
+
+  const job = useJobStream(jobId);
+  useEffect(() => {
+    if (job?.status === 'done' || job?.status === 'failed') {
+      invalidateAfterMove(qc);
+    }
+  }, [job?.status, qc]);
+
+  const moves = history.data ?? [];
+  const revertable = moves.filter((m) => m.status === 'moved');
+  const latestJobId = revertable[0]?.jobId ?? undefined;
+  const busy = revert.isPending || jobActive(job?.status);
+
+  if (moves.length === 0) {
+    return (
+      <details className="classify-history">
+        <summary>이동 이력</summary>
+        <p className="muted small">이동 이력이 없습니다.</p>
+      </details>
+    );
+  }
+
+  return (
+    <details className="classify-history">
+      <summary>
+        이동 이력 <span className="left-nav-count">{revertable.length}</span>
+      </summary>
+
+      <div className="auto-tag-actions">
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy || latestJobId === undefined}
+          onClick={() => {
+            if (
+              latestJobId !== undefined &&
+              window.confirm('가장 최근 분류 실행을 통째로 원복합니다.\n파일이 원위치로 되돌아갑니다.')
+            ) {
+              revert.mutate({ jobId: latestJobId });
+            }
+          }}
+        >
+          최근 실행 원복
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy || revertable.length === 0}
+          onClick={() => {
+            if (window.confirm('되돌릴 수 있는 모든 이동을 원복합니다.')) {
+              revert.mutate({ moveIds: revertable.map((m) => m.id) });
+            }
+          }}
+        >
+          전체 원복
+        </button>
+      </div>
+
+      <ul className="classify-history-list">
+        {moves.slice(0, 30).map((m) => (
+          <li key={m.id} className={m.status}>
+            <div className="auto-tag-name" title={`${m.fromPath} → ${m.toPath}`}>
+              {m.fileName}
+            </div>
+            <div className="auto-tag-chips">
+              <span className={`suggest-chip status-${m.status === 'reverted' ? 'error' : 'move'}`}>
+                {m.status === 'reverted' ? '원복됨' : '이동'}
+              </span>
+              <span className="classify-destrel">
+                {shortPath(m.fromPath)} → {shortPath(m.toPath)}
+              </span>
+              {m.ruleName && <span className="muted small">[{m.ruleName}]</span>}
+              {m.status === 'moved' && (
+                <button
+                  type="button"
+                  className="ghost classify-revert-btn"
+                  disabled={busy}
+                  onClick={() => revert.mutate({ moveIds: [m.id] })}
+                >
+                  원복
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+        {moves.length > 30 && (
+          <li className="muted small">… 외 {moves.length - 30}건</li>
+        )}
+      </ul>
+
+      {job && job.status !== 'done' && job.status !== 'failed' && (
+        <div className="job">원복 중… {Math.round((job.progress ?? 0) * 100)}%</div>
+      )}
+      {job?.status === 'done' && <RevertStats payload={job.payload} />}
+      {job?.status === 'failed' && (
+        <p className="error small">원복 실패: {job.error}</p>
+      )}
+      {revert.isError && (
+        <p className="error small">{(revert.error as Error).message}</p>
+      )}
+    </details>
+  );
+}
+
+function RevertStats({ payload }: { payload: string | undefined | null }) {
+  const s = parseRevertStats(payload);
+  if (!s) return <div className="job done">원복 완료 ✓</div>;
+  return (
+    <div className="job done">
+      원복 완료 — 원복 {s.reverted} · 충돌 {s.conflicts} · 오류 {s.errors} · 스킵{' '}
+      {s.skipped}
+    </div>
+  );
+}
+
+function parseRevertStats(payload: string | undefined | null): {
+  reverted: number;
+  conflicts: number;
+  errors: number;
+  skipped: number;
+} | null {
+  if (!payload) return null;
+  try {
+    const obj = JSON.parse(payload) as {
+      stats?: {
+        reverted?: number;
+        conflicts?: number;
+        errors?: number;
+        skipped?: number;
+      };
+    };
+    if (!obj.stats) return null;
+    return {
+      reverted: obj.stats.reverted ?? 0,
+      conflicts: obj.stats.conflicts ?? 0,
+      errors: obj.stats.errors ?? 0,
+      skipped: obj.stats.skipped ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<ClassifyRuleInput>(toForm(rule));
+  const [jobId, setJobId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!editing) setForm(toForm(rule));
+  }, [editing, rule]);
+
+  const patch = useMutation({
+    mutationFn: (data: Partial<ClassifyRuleInput>) =>
+      api.patchClassifyRule(rule.id, data),
+    onSuccess: () => {
+      setEditing(false);
+      qc.invalidateQueries({ queryKey: ['classifyRules'] });
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => api.removeClassifyRule(rule.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['classifyRules'] }),
+  });
+
+  const run = useMutation({
+    mutationFn: () => api.classifyApply([rule.id], true),
+    onSuccess: ({ jobId }) => setJobId(jobId),
+  });
+
+  const job = useJobStream(jobId);
+  useEffect(() => {
+    if (job?.status === 'done' || job?.status === 'failed') {
+      invalidateAfterMove(qc);
+    }
+  }, [job?.status, qc]);
+
+  const rootLabel = rule.rootId
+    ? roots.find((r) => r.id === rule.rootId)?.label ??
+      roots.find((r) => r.id === rule.rootId)?.path ??
+      `#${rule.rootId}`
+    : '모든 루트';
+
+  return (
+    <li className={`classify-rule ${rule.enabled ? '' : 'disabled'}`}>
+      <div className="classify-rule-head">
+        <label className="check small" title="규칙 사용">
+          <input
+            type="checkbox"
+            checked={rule.enabled}
+            onChange={(e) => patch.mutate({ enabled: e.target.checked })}
+          />
+          <strong>{rule.name}</strong>
+        </label>
+        <span className="muted small">우선순위 {rule.priority}</span>
+      </div>
+
+      {!editing ? (
+        <>
+          <div className="classify-rule-body small">
+            <code className="classify-pat">
+              {rule.matchType === 'glob' ? 'glob' : 're'}: {rule.pattern}
+            </code>
+            <span className="classify-arrow">→</span>
+            <code className="classify-dest">{rule.destTemplate}</code>
+          </div>
+          <div className="classify-rule-meta muted small">
+            <span>{rootLabel}</span>
+            <label className="check small" title="스케줄 켜기/끄기">
+              <input
+                type="checkbox"
+                checked={rule.scheduleOn}
+                disabled={!rule.scanCron}
+                onChange={(e) => patch.mutate({ scheduleOn: e.target.checked })}
+              />
+              스케줄 {rule.scanCron ? `(${rule.scanCron})` : '없음'}
+            </label>
+            {rule.lastRunAt && (
+              <span>최근 {new Date(rule.lastRunAt).toLocaleString()}</span>
+            )}
+          </div>
+        </>
+      ) : (
+        <RuleForm form={form} setForm={setForm} roots={roots} />
+      )}
+
+      <div className="root-actions">
+        {editing ? (
+          <>
+            <button
+              onClick={() => patch.mutate(form)}
+              disabled={patch.isPending}
+            >
+              저장
+            </button>
+            <button className="ghost" onClick={() => setEditing(false)}>
+              취소
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `규칙 "${rule.name}" 을 지금 실행해 매칭 파일을 이동합니다.\n실제 파일이 이동됩니다.`,
+                  )
+                ) {
+                  run.mutate();
+                }
+              }}
+              disabled={run.isPending || jobActive(job?.status)}
+            >
+              지금 실행
+            </button>
+            <button className="ghost" onClick={() => setEditing(true)}>
+              편집
+            </button>
+            <button
+              className="ghost danger-outline"
+              onClick={() => {
+                if (window.confirm(`규칙 "${rule.name}" 을 삭제합니다.`)) {
+                  remove.mutate();
+                }
+              }}
+            >
+              삭제
+            </button>
+          </>
+        )}
+      </div>
+
+      {patch.isError && (
+        <p className="error small">{(patch.error as Error).message}</p>
+      )}
+      {run.isError && (
+        <p className="error small">{(run.error as Error).message}</p>
+      )}
+      {job && job.status !== 'done' && job.status !== 'failed' && (
+        <div className="job">이동 중… {Math.round((job.progress ?? 0) * 100)}%</div>
+      )}
+      {job?.status === 'done' && <MoveStats payload={job.payload} />}
+      {job?.status === 'failed' && (
+        <p className="error small">실패: {job.error}</p>
+      )}
+    </li>
+  );
+}
+
+function RuleForm({
+  form,
+  setForm,
+  roots,
+}: {
+  form: ClassifyRuleInput;
+  setForm: (f: ClassifyRuleInput) => void;
+  roots: Root[];
+}) {
+  const set = (patch: Partial<ClassifyRuleInput>) =>
+    setForm({ ...form, ...patch });
+  return (
+    <div className="root-edit classify-form">
+      <label>
+        이름
+        <input
+          value={form.name}
+          onChange={(e) => set({ name: e.target.value })}
+        />
+      </label>
+      <div className="classify-form-row">
+        <label>
+          매칭
+          <select
+            value={form.matchType}
+            onChange={(e) =>
+              set({ matchType: e.target.value as 'regex' | 'glob' })
+            }
+          >
+            <option value="regex">정규식</option>
+            <option value="glob">글롭</option>
+          </select>
+        </label>
+        <label className="grow">
+          패턴
+          <input
+            value={form.pattern}
+            placeholder={
+              form.matchType === 'glob'
+                ? '예: *[Weekly Post]*'
+                : '예: ^\\[(?<country>[A-Z]{2,3})\\]'
+            }
+            onChange={(e) => set({ pattern: e.target.value })}
+          />
+        </label>
+      </div>
+      <label>
+        목적지 템플릿 (루트 상대)
+        <input
+          value={form.destTemplate}
+          placeholder="예: {country}/{stem}"
+          onChange={(e) => set({ destTemplate: e.target.value })}
+        />
+      </label>
+      <div className="classify-form-row">
+        <label>
+          우선순위
+          <input
+            type="number"
+            value={form.priority ?? 0}
+            onChange={(e) => set({ priority: Number(e.target.value) })}
+          />
+        </label>
+        <label className="grow">
+          대상 루트
+          <select
+            value={form.rootId ?? ''}
+            onChange={(e) =>
+              set({ rootId: e.target.value ? Number(e.target.value) : null })
+            }
+          >
+            <option value="">모든 루트</option>
+            {roots.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label ?? r.path}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="classify-form-row">
+        <label className="grow">
+          스케줄 cron
+          <input
+            value={form.scanCron ?? ''}
+            placeholder='예: "0 3 * * *" (매일 03:00)'
+            onChange={(e) => set({ scanCron: e.target.value || null })}
+          />
+        </label>
+        <label className="check small">
+          <input
+            type="checkbox"
+            checked={form.scheduleOn ?? false}
+            onChange={(e) => set({ scheduleOn: e.target.checked })}
+          />
+          스케줄 켜기
+        </label>
+      </div>
+      <p className="muted small">
+        토큰: <code>{'{fileName}'}</code> <code>{'{stem}'}</code>{' '}
+        <code>{'{ext}'}</code> + 정규식 named group(<code>{'(?<name>…)'}</code>)
+        은 <code>{'{name}'}</code> 으로 사용.
+      </p>
+    </div>
+  );
+}
+
+function AddRule({ roots }: { roots: Root[] }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<ClassifyRuleInput>(EMPTY_FORM);
+  const [open, setOpen] = useState(false);
+
+  const add = useMutation({
+    mutationFn: () => api.createClassifyRule(form),
+    onSuccess: () => {
+      setForm(EMPTY_FORM);
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ['classifyRules'] });
+    },
+  });
+
+  if (!open) {
+    return (
+      <button className="ghost" onClick={() => setOpen(true)}>
+        + 규칙 추가
+      </button>
+    );
+  }
+  return (
+    <div className="classify-add">
+      <RuleForm form={form} setForm={setForm} roots={roots} />
+      {add.isError && (
+        <p className="error small">{(add.error as Error).message}</p>
+      )}
+      <div className="root-actions">
+        <button
+          onClick={() => add.mutate()}
+          disabled={
+            add.isPending ||
+            !form.name.trim() ||
+            !form.pattern.trim() ||
+            !form.destTemplate.trim()
+          }
+        >
+          추가
+        </button>
+        <button className="ghost" onClick={() => setOpen(false)}>
+          취소
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ClassifyPanel() {
+  const qc = useQueryClient();
+  const rules = useQuery({
+    queryKey: ['classifyRules'],
+    queryFn: api.classifyRules,
+  });
+  const roots = useQuery({ queryKey: ['roots'], queryFn: api.roots });
+  const [preview, setPreview] = useState<ClassifyPreview | null>(null);
+  const [jobId, setJobId] = useState<number | null>(null);
+
+  const previewMut = useMutation({
+    mutationFn: () => api.classifyPreview(undefined, 50),
+    onSuccess: (data) => setPreview(data),
+  });
+  const applyMut = useMutation({
+    mutationFn: () => api.classifyApply(undefined, false),
+    onSuccess: ({ jobId }) => setJobId(jobId),
+  });
+
+  const job = useJobStream(jobId);
+  useEffect(() => {
+    if (job?.status === 'done' || job?.status === 'failed') {
+      invalidateAfterMove(qc);
+      setPreview(null);
+    }
+  }, [job?.status, qc]);
+
+  const rootList = roots.data ?? [];
+
+  return (
+    <section className="settings-section">
+      <h4>파일 분류</h4>
+      <p className="muted small">
+        파일명 패턴에 매칭되는 아카이브를 목적지 템플릿이 산출한 하위 디렉터리로
+        이동하고 경로를 갱신합니다. 규칙은 우선순위 오름차순으로 평가되며 첫 매칭
+        규칙만 적용됩니다. 원본 내용은 바뀌지 않습니다.
+      </p>
+
+      <ul className="classify-list">
+        {rules.data?.map((r) => (
+          <RuleRow key={r.id} rule={r} roots={rootList} />
+        ))}
+        {rules.data && rules.data.length === 0 && (
+          <li className="muted small">규칙이 없습니다.</li>
+        )}
+      </ul>
+
+      <AddRule roots={rootList} />
+
+      <div className="auto-tag-actions">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => previewMut.mutate()}
+          disabled={previewMut.isPending}
+        >
+          {previewMut.isPending ? '집계 중…' : '미리보기 (활성 규칙 전체)'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              window.confirm(
+                '활성 규칙 전체를 적용해 매칭 파일을 이동합니다.\n실제 파일이 이동됩니다.',
+              )
+            ) {
+              applyMut.mutate();
+            }
+          }}
+          disabled={applyMut.isPending || jobActive(job?.status)}
+        >
+          전체 적용
+        </button>
+      </div>
+
+      {previewMut.isError && (
+        <p className="error small">{(previewMut.error as Error).message}</p>
+      )}
+
+      {preview && (
+        <div className="auto-tag-preview">
+          <p className="small">
+            대상 <strong>{preview.total}</strong>건 — 이동 예정{' '}
+            <strong>{preview.willMove}</strong>건 / 샘플 {preview.sampled}건
+          </p>
+          <ul className="auto-tag-list">
+            {preview.items.slice(0, 15).map((it) => (
+              <li key={it.archiveId} className={it.status}>
+                <div className="auto-tag-name" title={it.currentPath}>
+                  {it.fileName}
+                </div>
+                <div className="auto-tag-chips">
+                  <span className={`suggest-chip status-${it.status}`}>
+                    {STATUS_LABEL[it.status] ?? it.status}
+                  </span>
+                  {it.ruleName && (
+                    <span className="muted small">[{it.ruleName}]</span>
+                  )}
+                  <span
+                    className="classify-root-chip"
+                    title={it.rootPath}
+                  >
+                    🗂 {it.rootLabel ?? rootName(it.rootPath)}
+                  </span>
+                  {it.destRel && (
+                    <span className="classify-destrel" title={it.destPath ?? ''}>
+                      → {it.destRel}/
+                    </span>
+                  )}
+                  {it.message && (
+                    <span className="muted small">{it.message}</span>
+                  )}
+                </div>
+              </li>
+            ))}
+            {preview.items.length > 15 && (
+              <li className="muted small">
+                … 외 {preview.items.length - 15}건 (샘플)
+              </li>
+            )}
+            {preview.items.length === 0 && (
+              <li className="muted small">이동 대상이 없습니다.</li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      {job && job.status !== 'done' && job.status !== 'failed' && (
+        <div className="job">
+          분류 이동 중… {Math.round((job.progress ?? 0) * 100)}%
+        </div>
+      )}
+      {job?.status === 'done' && <MoveStats payload={job.payload} />}
+      {job?.status === 'failed' && (
+        <p className="error small">실패: {job.error}</p>
+      )}
+
+      <HistorySection />
+    </section>
+  );
+}
+
+function MoveStats({ payload }: { payload: string | undefined | null }) {
+  const stats = parseStats(payload);
+  if (!stats) return <div className="job done">완료 ✓</div>;
+  return (
+    <div className="job done">
+      완료 — 이동 {stats.moved} · 충돌 {stats.conflicts} · 오류 {stats.errors} ·
+      제자리 {stats.noop}
+    </div>
+  );
+}
+
+function jobActive(s: string | undefined): boolean {
+  return s !== undefined && s !== 'done' && s !== 'failed';
+}
+
+function toForm(rule: ClassifyRule): ClassifyRuleInput {
+  return {
+    name: rule.name,
+    priority: rule.priority,
+    enabled: rule.enabled,
+    rootId: rule.rootId,
+    matchType: rule.matchType,
+    pattern: rule.pattern,
+    destTemplate: rule.destTemplate,
+    scanCron: rule.scanCron,
+    scheduleOn: rule.scheduleOn,
+  };
+}
+
+function parseStats(payload: string | undefined | null): {
+  moved: number;
+  conflicts: number;
+  errors: number;
+  noop: number;
+} | null {
+  if (!payload) return null;
+  try {
+    const obj = JSON.parse(payload) as {
+      stats?: {
+        moved?: number;
+        conflicts?: number;
+        errors?: number;
+        noop?: number;
+      };
+    };
+    if (!obj.stats) return null;
+    return {
+      moved: obj.stats.moved ?? 0,
+      conflicts: obj.stats.conflicts ?? 0,
+      errors: obj.stats.errors ?? 0,
+      noop: obj.stats.noop ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}

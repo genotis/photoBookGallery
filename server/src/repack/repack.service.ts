@@ -1,12 +1,13 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job as BullJob } from 'bullmq';
-import { copyFile, mkdir, rename, stat, unlink } from 'fs/promises';
+import { mkdir, rename, stat, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path';
 import sharp from 'sharp';
 import { ArchiveService } from '../archive/archive.service';
 import { ZipWriter } from '../archive/zip.writer';
+import { moveFile } from '../common/file.util';
 import { hashFile } from '../common/hash.util';
 import { ThumbnailService } from '../images/thumbnail.service';
 import { JobsService } from '../jobs/jobs.service';
@@ -266,17 +267,5 @@ export class RepackService implements OnModuleInit {
     } catch (e) {
       this.logger.warn(`임시 파일 정리 실패: ${path} — ${String(e)}`);
     }
-  }
-}
-
-/** 같은 파일시스템이면 rename, 다르면 copy+unlink. */
-async function moveFile(from: string, to: string): Promise<void> {
-  try {
-    await rename(from, to);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'EXDEV') throw err;
-    await copyFile(from, to);
-    await unlink(from);
   }
 }
