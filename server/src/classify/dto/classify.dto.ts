@@ -10,6 +10,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 const toBool = ({ value }: { value: unknown }) =>
@@ -54,6 +55,12 @@ export class CreateClassifyRuleDto {
   @IsOptional()
   @IsBoolean()
   scheduleOn?: boolean;
+
+  /** 한 실행에서 이동할 최대 건수. null/미지정이면 무제한. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  batchLimit?: number | null;
 }
 
 export class PatchClassifyRuleDto {
@@ -95,6 +102,12 @@ export class PatchClassifyRuleDto {
   @IsOptional()
   @IsBoolean()
   scheduleOn?: boolean;
+
+  /** 한 실행에서 이동할 최대 건수. null 이면 무제한. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  batchLimit?: number | null;
 }
 
 export class ClassifyPreviewDto {
@@ -128,6 +141,73 @@ export class ClassifyApplyDto {
   @Transform(toBool)
   @IsBoolean()
   force?: boolean;
+
+  /** 이번 실행에서 이동할 최대 건수. 미지정이면 무제한. 스케줄러는 규칙의 batchLimit 을 전달. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export const IMPORT_MODES = ['merge', 'replace'] as const;
+
+/** 백업 파일 한 건의 규칙. 루트는 이식성을 위해 rootPath(경로 스냅샷)로 매칭. */
+export class ImportRuleItemDto {
+  @IsString()
+  @MinLength(1)
+  name!: string;
+
+  @IsOptional()
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsIn(MATCH_TYPES)
+  matchType?: string;
+
+  @IsString()
+  @MinLength(1)
+  pattern!: string;
+
+  @IsString()
+  @MinLength(1)
+  destTemplate!: string;
+
+  @IsOptional()
+  @IsString()
+  scanCron?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  scheduleOn?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  batchLimit?: number | null;
+
+  /** 대상 루트 경로 스냅샷. import 시 이 경로로 루트를 찾아 연결(없으면 모든 루트). */
+  @IsOptional()
+  @IsString()
+  rootPath?: string | null;
+}
+
+export class ImportClassifyRulesDto {
+  /** merge: 기존 규칙 유지하고 추가. replace: 기존 전체 삭제 후 대체. */
+  @IsOptional()
+  @IsIn(IMPORT_MODES)
+  mode?: string;
+
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => ImportRuleItemDto)
+  rules!: ImportRuleItemDto[];
 }
 
 export class ClassifyRevertDto {

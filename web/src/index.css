@@ -2040,3 +2040,16 @@ ul.tree ul {
   color: #b7bdc6;
   white-space: nowrap;
 }
+
+.classify-backlog {
+  color: #e6c07b;
+}
+
+.classify-backup {
+  margin: 0.6rem 0;
+  padding-top: 0.6rem;
+  border-top: 1px dashed #2a2e35;
+}
+.classify-backup select {
+  font-size: 0.78rem;
+}

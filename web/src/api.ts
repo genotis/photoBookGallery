@@ -190,6 +190,7 @@ export interface ClassifyRule {
   destTemplate: string;
   scanCron: string | null;
   scheduleOn: boolean;
+  batchLimit: number | null;
   lastRunAt: string | null;
 }
 
@@ -203,6 +204,7 @@ export interface ClassifyRuleInput {
   destTemplate: string;
   scanCron?: string | null;
   scheduleOn?: boolean;
+  batchLimit?: number | null;
 }
 
 export type ClassifyStatus = 'move' | 'noop' | 'conflict' | 'error' | 'nomatch';
@@ -470,10 +472,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ruleIds, sampleLimit }),
     }),
-  classifyApply: (ruleIds?: number[], force = false) =>
+  classifyApply: (ruleIds?: number[], force = false, limit?: number) =>
     request<{ jobId: number }>('/classify/apply', {
       method: 'POST',
-      body: JSON.stringify({ ruleIds, force }),
+      body: JSON.stringify({ ruleIds, force, limit }),
+    }),
+  classifyExport: () =>
+    request<{
+      type: string;
+      version: number;
+      exportedAt: string;
+      count: number;
+      rules: unknown[];
+    }>('/classify/rules/export'),
+  classifyImport: (
+    data: { mode?: 'merge' | 'replace'; rules: unknown[] },
+  ) =>
+    request<{
+      imported: number;
+      skipped: number;
+      errors: string[];
+      warnings: string[];
+    }>('/classify/rules/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
   classifyHistory: (limit = 200) =>
     request<ClassifyMove[]>(`/classify/history?limit=${limit}`),

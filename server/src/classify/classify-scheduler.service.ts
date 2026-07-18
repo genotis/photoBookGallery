@@ -64,7 +64,12 @@ export class ClassifyScheduler implements OnModuleInit, OnModuleDestroy {
         expr,
         () => {
           void this.classify
-            .startApply({ ruleIds: [rule.id], force: true })
+            .startApply({
+              ruleIds: [rule.id],
+              force: true,
+              // 규칙별 한도 — 한 번에 이 건수까지만 이동, 나머지는 다음 주기.
+              limit: rule.batchLimit ?? undefined,
+            })
             .catch((e) =>
               this.logger.error(
                 `예약 분류 실패 (rule ${rule.id})`,

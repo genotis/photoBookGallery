@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api,
@@ -27,6 +27,7 @@ const EMPTY_FORM: ClassifyRuleInput = {
   rootId: null,
   scanCron: null,
   scheduleOn: false,
+  batchLimit: null,
 };
 
 function invalidateAfterMove(qc: ReturnType<typeof useQueryClient>): void {
@@ -230,7 +231,8 @@ function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
   });
 
   const run = useMutation({
-    mutationFn: () => api.classifyApply([rule.id], true),
+    mutationFn: () =>
+      api.classifyApply([rule.id], true, rule.batchLimit ?? undefined),
     onSuccess: ({ jobId }) => setJobId(jobId),
   });
 
@@ -281,6 +283,9 @@ function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
               />
               스케줄 {rule.scanCron ? `(${rule.scanCron})` : '없음'}
             </label>
+            <span title="한 실행당 최대 이동 건수">
+              배치 {rule.batchLimit ? `${rule.batchLimit}건` : '무제한'}
+            </span>
             {rule.lastRunAt && (
               <span>최근 {new Date(rule.lastRunAt).toLocaleString()}</span>
             )}
@@ -451,6 +456,22 @@ function RuleForm({
           스케줄 켜기
         </label>
       </div>
+      <label>
+        한 번에 최대 건수 (배치)
+        <input
+          type="number"
+          min={1}
+          value={form.batchLimit ?? ''}
+          placeholder="비우면 무제한"
+          onChange={(e) =>
+            set({ batchLimit: e.target.value ? Number(e.target.value) : null })
+          }
+        />
+      </label>
+      <p className="muted small">
+        스케줄·실행 시 한 번에 이 건수까지만 이동하고 나머지는 다음 실행에서
+        처리합니다. 대량 이동으로 시스템에 부하가 가는 걸 막습니다.
+      </p>
       <p className="muted small">
         토큰: <code>{'{fileName}'}</code> <code>{'{stem}'}</code>{' '}
         <code>{'{ext}'}</code> + 정규식 named group(<code>{'(?<name>…)'}</code>)
@@ -507,6 +528,127 @@ function AddRule({ roots }: { roots: Root[] }) {
   );
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function BackupSection() {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<'merge' | 'replace'>('merge');
+  const [result, setResult] = useState<{
+    imported: number;
+    skipped: number;
+    errors: string[];
+    warnings: string[];
+  } | null>(null);
+
+  const exportMut = useMutation({
+    mutationFn: () => api.classifyExport(),
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const d = new Date();
+      a.href = url;
+      a.download = `classify-rules-${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+  });
+
+  const importMut = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as unknown;
+      const rules = Array.isArray(parsed)
+        ? parsed
+        : ((parsed as { rules?: unknown[] })?.rules ?? null);
+      if (!Array.isArray(rules)) {
+        throw new Error('올바른 백업 파일이 아닙니다 (rules 배열 없음).');
+      }
+      return api.classifyImport({ mode, rules });
+    },
+    onSuccess: (res) => {
+      setResult(res);
+      qc.invalidateQueries({ queryKey: ['classifyRules'] });
+    },
+  });
+
+  return (
+    <div className="classify-backup">
+      <div className="auto-tag-actions">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => exportMut.mutate()}
+          disabled={exportMut.isPending}
+        >
+          ⬇ 규칙 백업(JSON)
+        </button>
+        <label className="check small" title="가져오기 방식">
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as 'merge' | 'replace')}
+          >
+            <option value="merge">추가(merge)</option>
+            <option value="replace">대체(replace)</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => fileRef.current?.click()}
+          disabled={importMut.isPending}
+        >
+          ⬆ 복구(가져오기)
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ''; // 같은 파일 재선택 허용
+            if (!file) return;
+            if (
+              mode === 'replace' &&
+              !window.confirm(
+                '기존 규칙을 모두 삭제하고 파일 내용으로 대체합니다. 계속할까요?',
+              )
+            ) {
+              return;
+            }
+            setResult(null);
+            importMut.mutate(file);
+          }}
+        />
+      </div>
+      {importMut.isError && (
+        <p className="error small">{(importMut.error as Error).message}</p>
+      )}
+      {result && (
+        <div className="job done">
+          가져오기 완료 — 추가 {result.imported} · 건너뜀 {result.skipped}
+          {result.warnings.map((w, i) => (
+            <p key={`w${i}`} className="muted small">
+              ⚠ {w}
+            </p>
+          ))}
+          {result.errors.map((er, i) => (
+            <p key={`e${i}`} className="error small">
+              {er}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ClassifyPanel() {
   const qc = useQueryClient();
   const rules = useQuery({
@@ -555,6 +697,8 @@ export function ClassifyPanel() {
       </ul>
 
       <AddRule roots={rootList} />
+
+      <BackupSection />
 
       <div className="auto-tag-actions">
         <button
@@ -656,6 +800,12 @@ function MoveStats({ payload }: { payload: string | undefined | null }) {
     <div className="job done">
       완료 — 이동 {stats.moved} · 충돌 {stats.conflicts} · 오류 {stats.errors} ·
       제자리 {stats.noop}
+      {stats.remaining > 0 && (
+        <span className="classify-backlog">
+          {' '}
+          · 다음 실행 대기 <strong>{stats.remaining}</strong>건 (배치 한도)
+        </span>
+      )}
     </div>
   );
 }
@@ -675,6 +825,7 @@ function toForm(rule: ClassifyRule): ClassifyRuleInput {
     destTemplate: rule.destTemplate,
     scanCron: rule.scanCron,
     scheduleOn: rule.scheduleOn,
+    batchLimit: rule.batchLimit,
   };
 }
 
@@ -683,6 +834,7 @@ function parseStats(payload: string | undefined | null): {
   conflicts: number;
   errors: number;
   noop: number;
+  remaining: number;
 } | null {
   if (!payload) return null;
   try {
@@ -692,6 +844,7 @@ function parseStats(payload: string | undefined | null): {
         conflicts?: number;
         errors?: number;
         noop?: number;
+        remaining?: number;
       };
     };
     if (!obj.stats) return null;
@@ -700,6 +853,7 @@ function parseStats(payload: string | undefined | null): {
       conflicts: obj.stats.conflicts ?? 0,
       errors: obj.stats.errors ?? 0,
       noop: obj.stats.noop ?? 0,
+      remaining: obj.stats.remaining ?? 0,
     };
   } catch {
     return null;

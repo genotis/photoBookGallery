@@ -79,6 +79,8 @@ export interface ApplyStats {
   noop: number;
   conflicts: number;
   errors: number;
+  /** batchLimit 로 이번 실행에서 미루어진(다음 실행 대상) 이동 건수. */
+  remaining: number;
 }
 
 export interface RevertStats {
@@ -252,6 +254,7 @@ export class ClassifyService implements OnModuleInit {
     const job = await this.jobs.create('classify', {
       ruleIds: dto.ruleIds ?? null,
       force: dto.force ?? false,
+      limit: dto.limit ?? null,
     });
     await this.queue.enqueue<ClassifyApplyDto>(QUEUE, job.id, dto);
     return job.id;
@@ -274,12 +277,21 @@ export class ClassifyService implements OnModuleInit {
     const rules = await this.compileRules(dto.ruleIds, dto.force ?? false);
     const candidates = await this.loadCandidates();
 
+    // 한 실행 최대 이동 건수.
+    // - dto.limit 이 명시되면 그대로 사용.
+    // - 아니면 단일 규칙 실행일 때 그 규칙의 batchLimit 을 자동 적용
+    //   (스케줄러·규칙별 실행·API 어떤 경로든 규칙 한도가 일관되게 걸리도록).
+    // - 여러 규칙을 한 번에 도는 "전체 적용"은 무제한.
+    const limit =
+      dto.limit ?? (rules.length === 1 ? rules[0].rule.batchLimit ?? undefined : undefined);
+
     const stats: ApplyStats = {
       matched: 0,
       moved: 0,
       noop: 0,
       conflicts: 0,
       errors: 0,
+      remaining: 0,
     };
 
     for (let i = 0; i < candidates.length; i++) {
@@ -289,8 +301,13 @@ export class ClassifyService implements OnModuleInit {
         switch (r.status) {
           case 'move':
             stats.matched += 1;
-            await this.performMove(a, r.destPath!, r.rule, jobId);
-            stats.moved += 1;
+            // 한도 도달 시 이동하지 않고 백로그로 집계 → 다음 실행에서 처리
+            if (limit !== undefined && stats.moved >= limit) {
+              stats.remaining += 1;
+            } else {
+              await this.performMove(a, r.destPath!, r.rule, jobId);
+              stats.moved += 1;
+            }
             break;
           case 'noop':
             stats.noop += 1;
@@ -336,7 +353,8 @@ export class ClassifyService implements OnModuleInit {
     await this.jobs.done(jobId);
     this.logger.log(
       `파일 분류 완료 (job ${jobId}): 이동 ${stats.moved}, 충돌 ${stats.conflicts}, ` +
-        `오류 ${stats.errors}, 제자리 ${stats.noop}`,
+        `오류 ${stats.errors}, 제자리 ${stats.noop}` +
+        (stats.remaining > 0 ? `, 다음 실행 대기 ${stats.remaining}` : ''),
     );
   }
 
