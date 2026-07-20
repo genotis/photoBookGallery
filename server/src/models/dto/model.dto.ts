@@ -15,6 +15,11 @@ export class UpsertModelDto {
   name!: string;
 
   @IsOptional()
+  @IsString()
+  @Length(0, 128)
+  nameEn?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(50)
   @IsString({ each: true })
@@ -34,6 +39,11 @@ export class PatchModelDto {
   @IsString()
   @Length(1, 128)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 128)
+  nameEn?: string;
 
   @IsOptional()
   @IsArray()

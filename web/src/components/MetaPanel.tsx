@@ -9,6 +9,7 @@ import {
   CountryRef,
   ModelRef,
   PublisherRef,
+  RuleSuggestion,
   SeriesRef,
   TagRef,
 } from '../api';
@@ -221,6 +222,87 @@ function SingleSelect<T extends NamedRef>({
   );
 }
 
+/** 선택된 모델 하나의 원문(name)·영문(nameEn) 이름을 편집. 공유 엔티티라 저장 시
+ *  모든 사진집에 반영된다. */
+function ModelNameRow({ model }: { model: ModelRef }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(model.name);
+  const [nameEn, setNameEn] = useState(model.nameEn ?? '');
+
+  useEffect(() => {
+    setName(model.name);
+    setNameEn(model.nameEn ?? '');
+  }, [model.id, model.name, model.nameEn]);
+
+  const dirty =
+    name.trim() !== model.name || nameEn.trim() !== (model.nameEn ?? '');
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.patchModel(model.id, { name: name.trim(), nameEn: nameEn.trim() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['models'] });
+      qc.invalidateQueries({ queryKey: ['archives'] });
+      qc.invalidateQueries({ queryKey: ['facets'] });
+    },
+  });
+
+  return (
+    <div className="model-name-row">
+      <input
+        className="model-name-orig"
+        value={name}
+        placeholder="원문"
+        onChange={(e) => setName(e.target.value)}
+        title="원문(대표) 이름"
+      />
+      <input
+        className="model-name-en"
+        value={nameEn}
+        placeholder="영문 (목록 정렬용)"
+        onChange={(e) => setNameEn(e.target.value)}
+        title="영문 이름"
+      />
+      <button
+        type="button"
+        className="ghost"
+        disabled={!dirty || !name.trim() || save.isPending}
+        onClick={() => save.mutate()}
+      >
+        저장
+      </button>
+      {save.isError && (
+        <span className="error small">{(save.error as Error).message}</span>
+      )}
+    </div>
+  );
+}
+
+function ModelNameEditor({
+  selected,
+  all,
+}: {
+  selected: NamedRef[];
+  all: ModelRef[];
+}) {
+  const byId = new Map(all.map((m) => [m.id, m]));
+  return (
+    <div className="model-name-editor">
+      <span className="behavior-label">모델 이름 (원문 · 영문)</span>
+      {selected.map((s) => {
+        const full = byId.get(s.id);
+        return full ? (
+          <ModelNameRow key={s.id} model={full} />
+        ) : (
+          <div key={s.id} className="model-name-row muted small">
+            {s.name} (저장 후 편집 가능)
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function MetaPanel({
   archiveId,
   onClose,
@@ -331,13 +413,8 @@ export function MetaPanel({
     return s;
   };
 
-  // ---- 파일명 추정 ----
-  const [suggestion, setSuggestion] = useState<{
-    country: { code: string; name?: string; existingId?: number } | null;
-    publisher: { name: string; existingId?: number } | null;
-    models: { name: string; aliases?: string[]; existingId?: number }[];
-    title: string | null;
-  } | null>(null);
+  // ---- 규칙 기반 추정 (분류·태깅 규칙 엔진) ----
+  const [suggestion, setSuggestion] = useState<RuleSuggestion | null>(null);
   const [suggestStatus, setSuggestStatus] = useState<
     'idle' | 'loading' | 'error'
   >('idle');
@@ -347,7 +424,7 @@ export function MetaPanel({
     setSuggestStatus('loading');
     setSuggestError(null);
     try {
-      const s = await api.suggestions(archiveId);
+      const s = await api.classifySuggest(archiveId);
       setSuggestion(s);
       setSuggestStatus('idle');
     } catch (e) {
@@ -387,6 +464,18 @@ export function MetaPanel({
       }
     }
 
+    if (suggestion.series && !nextForm.series) {
+      const s = suggestion.series;
+      if (s.existingId && seriesList.data) {
+        const existing = seriesList.data.find((x) => x.id === s.existingId);
+        if (existing) nextForm.series = existing;
+      } else {
+        const created = await api.createSeries(s.name);
+        qc.invalidateQueries({ queryKey: ['series'] });
+        nextForm.series = created;
+      }
+    }
+
     const existingIds = new Set(nextForm.selectedModels.map((m) => m.id));
     const lowerNames = new Set(
       nextForm.selectedModels.map((m) => m.name.toLowerCase()),
@@ -402,11 +491,35 @@ export function MetaPanel({
           }
         }
       } else if (!lowerNames.has(sm.name.toLowerCase())) {
-        const created = await api.createModel(sm.name, sm.aliases);
+        const created = await api.createModel(sm.name);
         qc.invalidateQueries({ queryKey: ['models'] });
         nextForm.selectedModels = [...nextForm.selectedModels, created];
         existingIds.add(created.id);
         lowerNames.add(created.name.toLowerCase());
+      }
+    }
+
+    // 태그 — 규칙이 제안한 태그를 누적(기존 링크는 스킵)
+    const tagIds = new Set(nextForm.selectedTags.map((t) => t.id));
+    const tagLower = new Set(
+      nextForm.selectedTags.map((t) => t.name.toLowerCase()),
+    );
+    for (const st of suggestion.tags) {
+      if (st.existingId) {
+        if (!tagIds.has(st.existingId) && tags.data) {
+          const ref = tags.data.find((t) => t.id === st.existingId);
+          if (ref) {
+            nextForm.selectedTags = [...nextForm.selectedTags, ref];
+            tagIds.add(ref.id);
+            tagLower.add(ref.name.toLowerCase());
+          }
+        }
+      } else if (!tagLower.has(st.name.toLowerCase())) {
+        const created = await api.createTag(st.name);
+        qc.invalidateQueries({ queryKey: ['tags'] });
+        nextForm.selectedTags = [...nextForm.selectedTags, created];
+        tagIds.add(created.id);
+        tagLower.add(created.name.toLowerCase());
       }
     }
 
@@ -451,7 +564,7 @@ export function MetaPanel({
                 onClick={fetchSuggestion}
                 disabled={suggestStatus === 'loading'}
               >
-                🪄 {suggestStatus === 'loading' ? '추정 중…' : '파일명에서 추정'}
+                🪄 {suggestStatus === 'loading' ? '추정 중…' : '규칙으로 추정'}
               </button>
               {suggestError && (
                 <span className="error small">{suggestError}</span>
@@ -500,6 +613,20 @@ export function MetaPanel({
                       출판사: {suggestion.publisher.name}
                     </span>
                   )}
+                  {suggestion.series && (
+                    <span
+                      className={`suggest-chip ${
+                        suggestion.series.existingId ? 'exists' : 'new'
+                      }`}
+                      title={
+                        suggestion.series.existingId
+                          ? '기존 시리즈'
+                          : '새로 생성됩니다'
+                      }
+                    >
+                      시리즈: {suggestion.series.name}
+                    </span>
+                  )}
                   {suggestion.models.map((m, i) => (
                     <span
                       key={`${m.name}-${i}`}
@@ -509,22 +636,42 @@ export function MetaPanel({
                       title={m.existingId ? '기존 모델' : '새로 생성됩니다'}
                     >
                       모델: {m.name}
-                      {m.aliases && m.aliases.length > 0 && (
-                        <span className="suggest-alias"> ({m.aliases.join(', ')})</span>
-                      )}
+                    </span>
+                  ))}
+                  {suggestion.tags.map((t, i) => (
+                    <span
+                      key={`tag-${t.name}-${i}`}
+                      className={`suggest-chip ${
+                        t.existingId ? 'exists' : 'new'
+                      }`}
+                      title={t.existingId ? '기존 태그' : '새로 생성됩니다'}
+                    >
+                      태그: {t.name}
                     </span>
                   ))}
                   {!suggestion.country &&
                     !suggestion.publisher &&
-                    suggestion.models.length === 0 && (
+                    !suggestion.series &&
+                    !suggestion.title &&
+                    suggestion.models.length === 0 &&
+                    suggestion.tags.length === 0 && (
                       <span className="muted small">
-                        추정 가능한 항목이 없습니다.
+                        매칭되는 규칙이 없습니다. 설정 → 분류·태깅 규칙에서 규칙을
+                        추가하세요.
                       </span>
                     )}
                 </div>
+                {suggestion.matchedRules.length > 0 && (
+                  <p className="muted small">
+                    적용 규칙: {suggestion.matchedRules.join(', ')}
+                  </p>
+                )}
                 {(suggestion.country ||
                   suggestion.publisher ||
-                  suggestion.models.length > 0) && (
+                  suggestion.series ||
+                  suggestion.title ||
+                  suggestion.models.length > 0 ||
+                  suggestion.tags.length > 0) && (
                   <div className="suggest-actions">
                     <button
                       type="button"
@@ -605,6 +752,12 @@ export function MetaPanel({
               onChange={(v) => setForm({ ...form, selectedModels: v })}
               onCreate={createModel}
             />
+            {form.selectedModels.length > 0 && (
+              <ModelNameEditor
+                selected={form.selectedModels}
+                all={models.data ?? []}
+              />
+            )}
             <TokenMultiSelect
               label="태그"
               options={tags.data ?? []}

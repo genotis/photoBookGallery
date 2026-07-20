@@ -101,6 +101,7 @@ export interface TagRef {
 export interface ModelRef {
   id: number;
   name: string;
+  nameEn?: string | null;
   aliases?: string[];
   profileImg?: string | null;
   bio?: string | null;
@@ -253,6 +254,16 @@ export interface ClassifyPreview {
   items: ClassifyPreviewItem[];
 }
 
+export interface RuleSuggestion {
+  country: { code: string; name?: string; existingId?: number } | null;
+  publisher: { name: string; existingId?: number } | null;
+  series: { name: string; existingId?: number } | null;
+  title: string | null;
+  models: { name: string; existingId?: number }[];
+  tags: { name: string; existingId?: number }[];
+  matchedRules: string[];
+}
+
 export interface ClassifyMove {
   id: number;
   archiveId: number;
@@ -401,6 +412,7 @@ export const api = {
     id: number,
     data: {
       name?: string;
+      nameEn?: string;
       aliases?: string[];
       profileImg?: string;
       bio?: string;
@@ -440,24 +452,10 @@ export const api = {
       `/tree${path ? `?path=${encodeURIComponent(path)}` : ''}`,
     ),
 
-  suggestions: (archiveId: number) =>
-    request<{
-      source: string;
-      country: {
-        code: string;
-        name?: string;
-        existingId?: number;
-      } | null;
-      publisher: { name: string; existingId?: number } | null;
-      models: {
-        name: string;
-        aliases?: string[];
-        existingId?: number;
-      }[];
-      title: string | null;
-    }>(`/archives/${archiveId}/suggestions`),
-
   // ---- 파일 분류 / 태깅 규칙 ----
+  /** 단일 아카이브 규칙 기반 메타/태그 제안 (MetaPanel "규칙으로 추정"). */
+  classifySuggest: (archiveId: number) =>
+    request<RuleSuggestion>(`/classify/suggest/${archiveId}`),
   classifyRules: () => request<ClassifyRule[]>('/classify/rules'),
   createClassifyRule: (data: ClassifyRuleInput) =>
     request<ClassifyRule>('/classify/rules', {

@@ -260,6 +260,12 @@ export class ClassifyController {
     return { ok: true };
   }
 
+  /** 단일 아카이브 규칙 기반 메타/태그 제안 (MetaPanel). */
+  @Get('suggest/:archiveId')
+  suggest(@Param('archiveId', ParseIntPipe) archiveId: number) {
+    return this.svc.suggestForArchive(archiveId);
+  }
+
   @Post('preview')
   preview(@Body() dto: ClassifyPreviewDto) {
     return this.svc.preview(dto);

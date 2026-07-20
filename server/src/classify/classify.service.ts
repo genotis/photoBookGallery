@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Archive, ClassifyRule, LibraryRoot, Prisma } from '@prisma/client';
 import { Job as BullJob } from 'bullmq';
 import { existsSync } from 'fs';
@@ -119,6 +124,17 @@ export interface RevertStats {
   conflicts: number;
   errors: number;
   skipped: number;
+}
+
+/** MetaPanel 규칙 기반 제안 — 기존 엔티티는 existingId 로 연결 가능. */
+export interface RuleSuggestion {
+  country: { code: string; name?: string; existingId?: number } | null;
+  publisher: { name: string; existingId?: number } | null;
+  series: { name: string; existingId?: number } | null;
+  title: string | null;
+  models: { name: string; existingId?: number }[];
+  tags: { name: string; existingId?: number }[];
+  matchedRules: string[];
 }
 
 @Injectable()
@@ -348,6 +364,62 @@ export class ClassifyService implements OnModuleInit {
     }
 
     return { total, willMove, willTag, sampled: items.length, items };
+  }
+
+  /**
+   * 단일 아카이브에 대해 활성 규칙을 매칭해 채울 메타/태그를 제안한다.
+   * (MetaPanel "규칙으로 추정" — 실제 변경 없음, 기존 엔티티는 existingId 로.)
+   */
+  async suggestForArchive(archiveId: number): Promise<RuleSuggestion> {
+    const archive = (await this.prisma.archive.findUnique({
+      where: { id: archiveId },
+      include: {
+        root: true,
+        country: { select: { id: true, code: true } },
+        models: { select: { modelId: true, model: { select: { name: true } } } },
+        tags: { select: { tagId: true, tag: { select: { name: true } } } },
+      },
+    })) as ArchiveWithMeta | null;
+    if (!archive) throw new NotFoundException('아카이브를 찾을 수 없습니다.');
+
+    const rules = await this.compileRules(undefined, false);
+    const matches = this.matchAll(archive, rules);
+    const plan = buildTagPlan(matches);
+
+    const [countries, publishers, seriesRows, models, tags] = await Promise.all([
+      this.prisma.country.findMany({ select: { id: true, code: true } }),
+      this.prisma.publisher.findMany({ select: { id: true, name: true } }),
+      this.prisma.series.findMany({ select: { id: true, name: true } }),
+      this.prisma.model.findMany({ select: { id: true, name: true } }),
+      this.prisma.tag.findMany({ select: { id: true, name: true } }),
+    ]);
+    const byCode = new Map(countries.map((c) => [c.code.toUpperCase(), c.id]));
+    const pubByName = new Map(publishers.map((p) => [p.name.toLowerCase(), p.id]));
+    const serByName = new Map(seriesRows.map((s) => [s.name.toLowerCase(), s.id]));
+    const modByName = new Map(models.map((m) => [m.name.toLowerCase(), m.id]));
+    const tagByName = new Map(tags.map((t) => [t.name.toLowerCase(), t.id]));
+
+    return {
+      country: plan.country
+        ? { code: plan.country, existingId: byCode.get(plan.country.toUpperCase()) }
+        : null,
+      publisher: plan.publisher
+        ? { name: plan.publisher, existingId: pubByName.get(plan.publisher.toLowerCase()) }
+        : null,
+      series: plan.series
+        ? { name: plan.series, existingId: serByName.get(plan.series.toLowerCase()) }
+        : null,
+      title: plan.title ?? null,
+      models: plan.models.map((name) => ({
+        name,
+        existingId: modByName.get(name.toLowerCase()),
+      })),
+      tags: plan.tags.map((name) => ({
+        name,
+        existingId: tagByName.get(name.toLowerCase()),
+      })),
+      matchedRules: matches.map((m) => m.rule.name),
+    };
   }
 
   /** DB Job 생성 + 큐 enqueue. 즉시 jobId 반환. */

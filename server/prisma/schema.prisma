@@ -138,7 +138,8 @@ model Entry {
 
 model Model {
   id         Int            @id @default(autoincrement())
-  name       String         @unique
+  name       String         @unique // 원문/대표 이름 (매칭·식별 기준)
+  nameEn     String? // 영문(로마자) 이름 — 모델 목록 정렬·표시에 우선 사용
   aliases    String? // JSON 배열 문자열 (별칭/표기 변형)
   profileImg String?
   bio        String?

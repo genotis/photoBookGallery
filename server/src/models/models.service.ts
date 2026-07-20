@@ -15,6 +15,7 @@ import {
 export interface ModelListItem {
   id: number;
   name: string;
+  nameEn: string | null;
   aliases: string[];
   profileImg: string | null;
   bio: string | null;
@@ -22,6 +23,11 @@ export interface ModelListItem {
   count: number;
   /** 갤러리 대표 표지 — 이 모델의 표지 있는 아카이브 하나. 없으면 null. */
   cover: { archiveId: number; contentHash: string } | null;
+}
+
+/** 목록 정렬·표시용 영문 우선 이름. */
+function englishName(m: { name: string; nameEn: string | null }): string {
+  return (m.nameEn?.trim() || m.name).toLowerCase();
 }
 
 function decodeAliases(raw: string | null | undefined): string[] {
@@ -57,6 +63,7 @@ export class ModelsService {
   private toItem(r: {
     id: number;
     name: string;
+    nameEn: string | null;
     aliases: string | null;
     profileImg: string | null;
     bio: string | null;
@@ -68,6 +75,7 @@ export class ModelsService {
     return {
       id: r.id,
       name: r.name,
+      nameEn: r.nameEn,
       aliases: decodeAliases(r.aliases),
       profileImg: r.profileImg,
       bio: r.bio,
@@ -78,16 +86,28 @@ export class ModelsService {
   }
 
   async list(q?: string): Promise<ModelListItem[]> {
-    // 이름·별칭(JSON 문자열) 둘 다 포함 검색
+    // 이름·영문·별칭 모두 포함 검색
     const where: Prisma.ModelWhereInput = q
-      ? { OR: [{ name: { contains: q } }, { aliases: { contains: q } }] }
+      ? {
+          OR: [
+            { name: { contains: q } },
+            { nameEn: { contains: q } },
+            { aliases: { contains: q } },
+          ],
+        }
       : {};
     const rows = await this.prisma.model.findMany({
       where,
-      orderBy: [{ favorite: 'desc' }, { name: 'asc' }],
       include: this.coverInclude,
     });
-    return rows.map((r) => this.toItem(r));
+    // 즐겨찾기 우선 → 영문 이름(nameEn ?? name) 사전순. SQLite 는 coalesce 정렬이
+    // 까다로워 JS 로 정렬한다 (모델 수는 많지 않음).
+    return rows
+      .map((r) => this.toItem(r))
+      .sort((a, b) => {
+        if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+        return englishName(a).localeCompare(englishName(b));
+      });
   }
 
   async detail(id: number): Promise<ModelListItem> {
@@ -104,6 +124,7 @@ export class ModelsService {
       const r = await this.prisma.model.create({
         data: {
           name: dto.name,
+          nameEn: dto.nameEn ?? null,
           aliases: encodeAliases(dto.aliases) ?? null,
           profileImg: dto.profileImg ?? null,
           bio: dto.bio ?? null,
@@ -112,6 +133,7 @@ export class ModelsService {
       return {
         id: r.id,
         name: r.name,
+        nameEn: r.nameEn,
         aliases: decodeAliases(r.aliases),
         profileImg: r.profileImg,
         bio: r.bio,
@@ -134,6 +156,7 @@ export class ModelsService {
     await this.ensureExists(id);
     const data: Prisma.ModelUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
+    if (dto.nameEn !== undefined) data.nameEn = dto.nameEn;
     if (dto.aliases !== undefined) data.aliases = encodeAliases(dto.aliases);
     if (dto.profileImg !== undefined) data.profileImg = dto.profileImg;
     if (dto.bio !== undefined) data.bio = dto.bio;

@@ -79,8 +79,8 @@ export function ModelGallery({
               </button>
               <button
                 className="model-open"
-                onClick={() => onSelect(m.id, m.name)}
-                title={`${m.name} — ${m.count ?? 0}권`}
+                onClick={() => onSelect(m.id, m.nameEn || m.name)}
+                title={`${m.nameEn || m.name} — ${m.count ?? 0}권`}
               >
                 {m.profileImg ? (
                   <img src={m.profileImg} alt={m.name} loading="lazy" />
@@ -94,7 +94,12 @@ export function ModelGallery({
                   <div className="no-cover">표지 없음</div>
                 )}
                 <div className="model-caption">
-                  <span className="name">{m.name}</span>
+                  <span className="name">
+                    {m.nameEn || m.name}
+                    {m.nameEn && m.nameEn !== m.name && (
+                      <span className="model-orig"> · {m.name}</span>
+                    )}
+                  </span>
                   <span className="pages">{m.count ?? 0}권</span>
                 </div>
               </button>
