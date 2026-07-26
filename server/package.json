@@ -1,6 +1,6 @@
 {
   "name": "@pbg/server",
-  "version": "0.11.4",
+  "version": "0.12.0",
   "private": true,
   "description": "photoBookGallery 백엔드 (NestJS)",
   "main": "dist/main.js",

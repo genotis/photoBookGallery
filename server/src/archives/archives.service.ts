@@ -5,6 +5,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SearchIndexService } from '../search/search-index.service';
+import { ExclusionsService } from '../exclusions/exclusions.service';
 import { BatchArchiveDto } from './dto/batch-archive.dto';
 import { ListArchivesDto } from './dto/list-archives.dto';
 import { PatchArchiveDto } from './dto/patch-archive.dto';
@@ -79,6 +80,7 @@ export class ArchivesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly searchIndex: SearchIndexService,
+    private readonly exclusions: ExclusionsService,
   ) {}
 
   async list(dto: ListArchivesDto): Promise<{
@@ -147,12 +149,18 @@ export class ArchivesService {
     });
   }
 
-  entries(id: number) {
-    return this.prisma.entry.findMany({
+  /**
+   * 뷰어용 표시 엔트리 목록. 렌더 제외(광고 등) 규칙에 매칭되는 엔트리는 걸러낸다.
+   * 뷰어는 이 배열의 위치(0..n-1)를 페이지 URL 인덱스로 쓰고, 이미지 컨트롤러도
+   * 동일하게 "i번째 표시 엔트리" 를 해석하므로 위치가 곧 페이지 번호다.
+   */
+  async entries(id: number) {
+    const rows = await this.prisma.entry.findMany({
       where: { archiveId: id },
       orderBy: { order: 'asc' },
       select: { order: true, name: true },
     });
+    return this.exclusions.filterVisible(rows);
   }
 
   /**

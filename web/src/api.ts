@@ -279,6 +279,22 @@ export interface ClassifyMove {
   revertedAt: string | null;
 }
 
+export interface RenderExclusion {
+  id: number;
+  matchType: 'glob' | 'regex';
+  pattern: string;
+  enabled: boolean;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface RenderExclusionInput {
+  matchType?: 'glob' | 'regex';
+  pattern: string;
+  enabled?: boolean;
+  note?: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: 'include',
@@ -515,6 +531,30 @@ export const api = {
     request<{ jobId: number }>('/classify/revert', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  // ---- 렌더 제외(광고 등 미표시) 규칙 ----
+  exclusions: () => request<RenderExclusion[]>('/exclusions'),
+  createExclusion: (data: RenderExclusionInput) =>
+    request<RenderExclusion>('/exclusions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  patchExclusion: (id: number, data: Partial<RenderExclusionInput>) =>
+    request<RenderExclusion>(`/exclusions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  removeExclusion: (id: number) =>
+    request<{ ok: true }>(`/exclusions/${id}`, { method: 'DELETE' }),
+  testExclusion: (data: {
+    matchType: 'glob' | 'regex';
+    pattern: string;
+    archiveId?: number;
+  }) =>
+    request<{ matched: string[]; total: number }>('/exclusions/test', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 
   duplicatesScan: () =>

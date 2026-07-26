@@ -485,8 +485,10 @@ export function Viewer({
   const [activeJob, setActiveJob] = useState<number | null>(null);
   const repack = useMutation({
     mutationFn: () => {
+      // 선택은 표시 목록의 위치(0..n-1) 기준. 제외 엔트리로 order 에 간극이
+      // 생길 수 있으므로 e.order 가 아니라 배열 위치로 매칭한다.
       const names = (entries.data ?? [])
-        .filter((e) => selected.has(e.order))
+        .filter((_, i) => selected.has(i))
         .map((e) => e.name);
       return api.repack(archive.id, names);
     },

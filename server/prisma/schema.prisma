@@ -196,6 +196,18 @@ model ArchiveTag {
   @@index([tagId])
 }
 
+// 렌더 제외 규칙 — 파일명 패턴에 매칭되는 압축 내 이미지를 뷰어/페이지에서 숨긴다.
+// 광고 이미지처럼 여러 책에 반복 등장하는 파일을 전역으로 미표시하는 용도.
+// 물리 삭제가 아니라 표시만 제외 — 원본 파일은 그대로 둔다.
+model RenderExclusion {
+  id        Int      @id @default(autoincrement())
+  matchType String   @default("glob") // glob | regex (엔트리 basename 기준)
+  pattern   String
+  enabled   Boolean  @default(true)
+  note      String?
+  createdAt DateTime @default(now())
+}
+
 model Job {
   id        Int      @id @default(autoincrement())
   type      String // index | thumbnail | repack

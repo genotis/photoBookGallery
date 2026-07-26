@@ -8,6 +8,7 @@ import { api, Root } from '../api';
 import { AppPrefsPanel } from './AppPrefsPanel';
 import { ClassifyPanel } from './ClassifyPanel';
 import { DuplicatesPanel } from './DuplicatesPanel';
+import { ExclusionsPanel } from './ExclusionsPanel';
 import { ViewerBehaviorPanel } from './ViewerBehaviorPanel';
 import { useJobStream } from './useJobStream';
 
@@ -226,6 +227,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <AppPrefsPanel />
           <ViewerBehaviorPanel />
           <ClassifyPanel />
+          <ExclusionsPanel />
           <DuplicatesPanel />
         </div>
       </aside>

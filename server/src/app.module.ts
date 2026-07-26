@@ -25,6 +25,7 @@ import { TreeModule } from './tree/tree.module';
 import { RepackModule } from './repack/repack.module';
 import { ClassifyModule } from './classify/classify.module';
 import { DuplicatesModule } from './duplicates/duplicates.module';
+import { ExclusionsModule } from './exclusions/exclusions.module';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -68,6 +69,7 @@ const isProd = process.env.NODE_ENV === 'production';
     RepackModule,
     ClassifyModule,
     DuplicatesModule,
+    ExclusionsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })
