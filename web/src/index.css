@@ -340,6 +340,42 @@ select {
   color: #b8c0cc;
 }
 
+/* 현재 페이지 이미지 파일명 — 자막 바로 아래, 작게. 선택/복사 가능. */
+.viewer-filename {
+  position: absolute;
+  top: 4.75rem;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 0.9rem;
+  transition: opacity 200ms ease;
+}
+.viewer-filename.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.viewer-filename .vf-name {
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  max-width: min(80vw, 720px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  color: #aeb4bd;
+  padding: 0.12rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(14, 16, 20, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 /* 페이지 인디케이터 — 큰 현재 페이지 + 작은 총 페이지.
    타이틀이 줄어들어도 자기 크기는 유지(우측 컨트롤과 겹치지 않도록 vb-left 안 고정폭). */
 .vb-page {

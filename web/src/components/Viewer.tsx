@@ -538,6 +538,8 @@ export function Viewer({
 
   const isSelected = useMemo(() => (i: number) => selected.has(i), [selected]);
   const showDirToggle = view === 'single' || view === 'scroll-h';
+  // 현재 페이지의 압축 내 이미지 파일명 (표시/복사용). 표시 목록 위치 = index.
+  const pageName = entries.data?.[index]?.name ?? '';
 
   // ---- 즐겨찾기 토글 ----
   // 낙관적 로컬 상태(favOptim)로 즉시 반영, 사진집이 바뀌면 초기화.
@@ -774,6 +776,20 @@ export function Viewer({
           )}
         </span>
       </div>
+
+      {/* 현재 페이지 이미지 파일명 — 작게 표시, 텍스트 선택/복사 가능
+          (광고 제외 규칙에 붙여넣기 용). 상단바와 동기 자동 숨김. */}
+      {pageName && (
+        <div
+          className={`viewer-filename ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <span className="vf-name" title={pageName}>
+            {pageName}
+          </span>
+        </div>
+      )}
 
       {repackPending && (
         <div className="repack-progress">
