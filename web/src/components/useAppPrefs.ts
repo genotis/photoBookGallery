@@ -7,13 +7,31 @@ import { useEffect, useState } from 'react';
 export interface AppPrefs {
   /** 사이드바의 "랜덤" 메뉴가 한 번에 가져올 아카이브 수. */
   randomCount: number;
+  /**
+   * 뷰어가 한 번에 미리 로드(프리페치)할 페이지 수 — 현재 페이지 기준 창.
+   * 페이지가 아주 많은 사진집에서 전체를 한꺼번에 당기면 서버가 밀려
+   * 프리징·다음 파일 안 열림이 생기므로, 이 창 크기만큼 나눠서 로드한다.
+   */
+  viewerPrefetch: number;
 }
 
 const STORAGE_KEY = 'pbg.appPrefs.v1';
 
 const DEFAULT: AppPrefs = {
   randomCount: 20,
+  viewerPrefetch: 40,
 };
+
+function clampInt(
+  v: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  return typeof v === 'number' && v >= min && v <= max
+    ? Math.round(v)
+    : fallback;
+}
 
 function load(): AppPrefs {
   if (typeof window === 'undefined') return DEFAULT;
@@ -22,12 +40,8 @@ function load(): AppPrefs {
     if (!raw) return DEFAULT;
     const v = JSON.parse(raw) as Partial<AppPrefs>;
     return {
-      randomCount:
-        typeof v.randomCount === 'number' &&
-        v.randomCount >= 5 &&
-        v.randomCount <= 200
-          ? Math.round(v.randomCount)
-          : DEFAULT.randomCount,
+      randomCount: clampInt(v.randomCount, 5, 200, DEFAULT.randomCount),
+      viewerPrefetch: clampInt(v.viewerPrefetch, 5, 300, DEFAULT.viewerPrefetch),
     };
   } catch {
     return DEFAULT;

@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ArchiveListItem, pageUrl } from '../api';
+import { useAppPrefs } from './useAppPrefs';
 import { useJobStream } from './useJobStream';
 import { useViewerBehavior } from './useViewerBehavior';
 
@@ -108,6 +109,7 @@ export function Viewer({
   useEffect(() => savePrefs({ view, fit, dir }), [view, fit, dir]);
 
   const [behavior] = useViewerBehavior();
+  const [appPrefs] = useAppPrefs();
 
   const [index, setIndex] = useState(0);
   // 항상 최신 index 를 담는 ref — 프리페치·스크롤 동기화가 index 를 deps 에 넣지
@@ -119,13 +121,20 @@ export function Viewer({
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
+  // "다시 로드" 논스 — 올릴 때마다 이미지 URL 과 <img> key 가 바뀌어, 브라우저
+  // 캐시(진행 중이던/깨진 로드 포함)를 우회하고 모든 <img> 를 새로 마운트한다.
+  const [reloadNonce, setReloadNonce] = useState(0);
+
   // 페이지 URL 은 항상 archive.contentHash 를 버스터로 부착.
   // 재압축이 일어나면 contentHash 가 바뀌어 URL 도 자연스럽게 회전 → 옛 immutable
   // 디스크 캐시를 우회. 같은 archive 동안은 같은 URL 이라 캐시 효율도 유지.
+  // 다시 로드 시 reloadNonce 를 덧붙여 브라우저 캐시까지 우회.
   const pUrl = useCallback(
-    (id: number, i: number, size = 'preview') =>
-      pageUrl(id, i, size, archive.contentHash),
-    [archive.contentHash],
+    (id: number, i: number, size = 'preview') => {
+      const base = pageUrl(id, i, size, archive.contentHash);
+      return reloadNonce ? `${base}&r=${reloadNonce}` : base;
+    },
+    [archive.contentHash, reloadNonce],
   );
 
   // 스크롤 컨테이너 ref — 키보드/스와이프 nav 시 명시적 scrollIntoView
@@ -139,6 +148,7 @@ export function Viewer({
     setIndex(0);
     setSelected(new Set());
     setSelectMode(false);
+    setReloadNonce(0);
     scrollVRef.current?.scrollTo({ top: 0 });
     scrollHRef.current?.scrollTo({ left: 0 });
   }, [archive.id]);
@@ -233,21 +243,23 @@ export function Viewer({
     };
   }, [archive.id, index, view, total, pUrl]);
 
-  // 사진집 전체 백그라운드 프리페치.
-  // - 순서: 현재 페이지에서 가까운 순(선택 파일 우선).
-  // - 썸네일을 먼저 전부 → 그다음 미리보기. 작은 썸네일이 먼저 채워져 하단
-  //   네비게이션이 빠르게 그려지고(썸네일 우선 렌더링), 이후 미리보기가 채워진다.
-  // - AbortController 로 뷰어 이탈/다른 사진집 전환 시 진행 중 요청(서버 측
-  //   압축풀기 포함)을 즉시 중단. fetch 로 HTTP 캐시를 데워 <img> 가 재사용.
+  // 백그라운드 프리페치 — 현재 페이지 중심의 "창" 만큼만 나눠서 로드.
+  // - 전체를 한꺼번에 당기면 페이지가 아주 많은 사진집에서 서버 압축풀기 큐가
+  //   밀려 프리징·다음 사진집 안 열림이 생긴다. 창 크기(appPrefs.viewerPrefetch)
+  //   만큼만 당기고, 페이지를 넘기면 창이 이동해 다음 구간을 이어서 로드한다.
+  // - 순서: 현재 페이지에서 가까운 순. 썸네일을 먼저 → 그다음 미리보기.
+  // - AbortController 로 페이지 이동/사진집 전환/뷰어 이탈 시 진행 중 요청(서버 측
+  //   압축풀기 포함)을 즉시 중단. 이미 받은 URL 은 immutable 캐시라 재요청도 저렴.
+  // - 현재 보이는 페이지는 <img src> 가 직접 로드하므로 이 창과 무관하게 열린다.
   useEffect(() => {
     if (total === 0) return;
     const ac = new AbortController();
-    const start = indexRef.current;
-    // 현재 페이지 기준 거리순: start, start+1, start-1, start+2, …
-    const dist: number[] = [start];
-    for (let d = 1; d < total; d++) {
-      if (start + d < total) dist.push(start + d);
-      if (start - d >= 0) dist.push(start - d);
+    const windowSize = Math.max(1, appPrefs.viewerPrefetch);
+    // 현재 페이지 중심으로 최대 windowSize개를 거리순으로 모은다.
+    const dist: number[] = [index];
+    for (let d = 1; dist.length < windowSize && d < total; d++) {
+      if (index + d < total) dist.push(index + d);
+      if (dist.length < windowSize && index - d >= 0) dist.push(index - d);
     }
     const tasks: { idx: number; size: string }[] = [
       ...dist.map((idx) => ({ idx, size: 'thumb' })),
@@ -270,7 +282,7 @@ export function Viewer({
     };
     void next();
     return () => ac.abort();
-  }, [archive.id, total, pUrl]);
+  }, [archive.id, total, pUrl, index, appPrefs.viewerPrefetch]);
 
   // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
   useEffect(() => {
@@ -561,6 +573,15 @@ export function Viewer({
     favMut.mutate(next);
   };
 
+  // ---- 현재 포토북 다시 로드 ----
+  // 로딩이 멈추거나 이미지가 깨졌을 때 재시도. entries/상세를 재조회하고
+  // reloadNonce 를 올려 모든 <img> 를 캐시 우회·재마운트한다. 페이지 위치는 유지.
+  const reloadArchive = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['entries', archive.id] });
+    qc.invalidateQueries({ queryKey: ['archive', archive.id] });
+    setReloadNonce((n) => n + 1);
+  }, [qc, archive.id]);
+
   return (
     <div
       className={`viewer view-${view} fit-${fit} dir-${dir} ${
@@ -741,6 +762,14 @@ export function Viewer({
                     className={`vb-ico ${slideshow ? 'i-pause' : 'i-play'}`}
                   />
                 </button>
+                <button
+                  className="vb-action vb-reload"
+                  onClick={reloadArchive}
+                  title="현재 포토북 다시 로드"
+                  aria-label="현재 포토북 다시 로드"
+                >
+                  <span className="vb-ico i-reload" />
+                </button>
                 {onEdit && (
                   <button className="vb-action" onClick={onEdit} title="메타 편집">
                     메타
@@ -827,7 +856,7 @@ export function Viewer({
               <img
                 // 아카이브(콘텐츠해시)+인덱스로 key → 다른 사진집으로 넘어가면
                 // 이전 img 를 재사용하지 않고 새로 마운트(이전 이미지 잔상 방지).
-                key={`${archive.contentHash}-${index}`}
+                key={`${archive.contentHash}-${reloadNonce}-${index}`}
                 className="viewer-img"
                 src={pUrl(archive.id, index)}
                 alt={`page ${index + 1}`}
@@ -855,7 +884,7 @@ export function Viewer({
         >
           {Array.from({ length: total }, (_, i) => (
             <div
-              key={`${archive.contentHash}-${i}`}
+              key={`${archive.contentHash}-${reloadNonce}-${i}`}
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
               }`}
@@ -884,7 +913,7 @@ export function Viewer({
         >
           {Array.from({ length: total }, (_, i) => (
             <div
-              key={`${archive.contentHash}-${i}`}
+              key={`${archive.contentHash}-${reloadNonce}-${i}`}
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
               }`}
@@ -915,7 +944,7 @@ export function Viewer({
           <div className="thumbs-inner" ref={thumbsRef} dir={dir}>
             {Array.from({ length: total }, (_, i) => (
               <button
-                key={`${archive.contentHash}-${i}`}
+                key={`${archive.contentHash}-${reloadNonce}-${i}`}
                 className={`thumb ${i === index ? 'on' : ''}`}
                 onClick={() => navTo(i)}
                 title={`페이지 ${i + 1}`}

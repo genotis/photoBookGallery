@@ -1,6 +1,6 @@
 {
   "name": "photobookgallery",
-  "version": "0.12.1",
+  "version": "0.14.0",
   "private": true,
   "description": "NAS 압축파일(zip/cbz/cbr/rar) 사진집 브라우징·정리·갤러리 뷰잉 웹앱",
   "workspaces": [

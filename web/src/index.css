@@ -576,6 +576,12 @@ select {
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='3.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/><rect x='9.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/></svg>");
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='3.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/><rect x='9.5' y='3' width='3' height='10' rx='0.5' fill='%23000'/></svg>");
 }
+/* 다시 로드 — 순환 화살표(refresh) */
+.i-reload {
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='23 4 23 10 17 10'/><polyline points='1 20 1 14 7 14'/><path d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='23 4 23 10 17 10'/><polyline points='1 20 1 14 7 14'/><path d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'/></svg>");
+}
+
 /* 슬라이드쇼 활성 시 강조 */
 .vb-slideshow.on {
   background: #3b82f6 !important;
