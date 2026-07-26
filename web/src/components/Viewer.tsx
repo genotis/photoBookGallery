@@ -233,23 +233,32 @@ export function Viewer({
     };
   }, [archive.id, index, view, total, pUrl]);
 
-  // 사진집 전체 백그라운드 프리페치 — 현재 페이지부터 앞으로 순차 채운다.
-  // AbortController 로 뷰어 이탈/다른 사진집 전환 시 진행 중이던 요청(서버 측
-  // 압축풀기 포함)을 즉시 중단 → 떠난 사진집에 자원을 낭비하지 않는다.
-  // fetch 로 HTTP 캐시를 데우면 이후 <img> 가 그 캐시를 그대로 재사용한다.
+  // 사진집 전체 백그라운드 프리페치.
+  // - 순서: 현재 페이지에서 가까운 순(선택 파일 우선).
+  // - 썸네일을 먼저 전부 → 그다음 미리보기. 작은 썸네일이 먼저 채워져 하단
+  //   네비게이션이 빠르게 그려지고(썸네일 우선 렌더링), 이후 미리보기가 채워진다.
+  // - AbortController 로 뷰어 이탈/다른 사진집 전환 시 진행 중 요청(서버 측
+  //   압축풀기 포함)을 즉시 중단. fetch 로 HTTP 캐시를 데워 <img> 가 재사용.
   useEffect(() => {
     if (total === 0) return;
     const ac = new AbortController();
     const start = indexRef.current;
-    // 현재 다음 페이지부터 앞으로, 마지막에 현재 페이지(표시용 <img> 가 이미 로드).
-    const order: number[] = [];
-    for (let k = 1; k <= total; k++) order.push((start + k) % total);
-    let i = 0;
+    // 현재 페이지 기준 거리순: start, start+1, start-1, start+2, …
+    const dist: number[] = [start];
+    for (let d = 1; d < total; d++) {
+      if (start + d < total) dist.push(start + d);
+      if (start - d >= 0) dist.push(start - d);
+    }
+    const tasks: { idx: number; size: string }[] = [
+      ...dist.map((idx) => ({ idx, size: 'thumb' })),
+      ...dist.map((idx) => ({ idx, size: 'preview' })),
+    ];
+    let t = 0;
     const next = async (): Promise<void> => {
-      if (ac.signal.aborted || i >= order.length) return;
-      const idx = order[i++];
+      if (ac.signal.aborted || t >= tasks.length) return;
+      const { idx, size } = tasks[t++];
       try {
-        const res = await fetch(pUrl(archive.id, idx), {
+        const res = await fetch(pUrl(archive.id, idx, size), {
           signal: ac.signal,
           credentials: 'include',
         });
@@ -554,9 +563,17 @@ export function Viewer({
         onDoubleClick={(e) => e.stopPropagation()}
       >
         <div className="vb-left">
-          <button className="vb-icon vb-close" onClick={onClose} title="닫기 (Esc)">
-            ✕
-          </button>
+          {/* 전체화면일 때는 닫기 [X] 숨김 — Esc(전체화면 해제) 또는 전체화면
+              해제 버튼으로 빠져나온다. */}
+          {!isFs && (
+            <button
+              className="vb-icon vb-close"
+              onClick={onClose}
+              title="닫기 (Esc)"
+            >
+              ✕
+            </button>
+          )}
           <button
             className="vb-icon"
             onClick={toggleFullscreen}
@@ -858,7 +875,8 @@ export function Viewer({
                 <img
                   src={pUrl(archive.id, i, 'thumb')}
                   alt=""
-                  loading="lazy"
+                  // 선택 페이지 주변은 즉시 로드(우선), 나머지는 lazy.
+                  loading={Math.abs(i - index) <= 15 ? 'eager' : 'lazy'}
                   draggable={false}
                 />
                 <span className="thumb-num">{i + 1}</span>
