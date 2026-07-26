@@ -110,6 +110,10 @@ export function Viewer({
   const [behavior] = useViewerBehavior();
 
   const [index, setIndex] = useState(0);
+  // 항상 최신 index 를 담는 ref — 프리페치·스크롤 동기화가 index 를 deps 에 넣지
+  // 않고도 현재 페이지를 참조하기 위함.
+  const indexRef = useRef(index);
+  indexRef.current = index;
 
   // 선택 모드 (삭제 후 재압축)
   const [selectMode, setSelectMode] = useState(false);
@@ -211,39 +215,52 @@ export function Viewer({
     return () => window.removeEventListener('keydown', onKey);
   }, [dir, go, index, view, onClose, selectMode, toggle, hasPrev, hasNext, onNavigateArchive, metaOpen]);
 
-  // 프리로딩 (단일/가로 모드) — 인접 페이지 즉시
+  // 프리로딩 (단일/가로 모드) — 인접 페이지 즉시.
+  // 페이지/사진집 전환 시 진행 중이던 로드는 src 를 비워 중단한다.
   useEffect(() => {
     if (view === 'scroll-v') return;
+    const imgs: HTMLImageElement[] = [];
     [index + 1, index + 2, index - 1].forEach((i) => {
       if (i >= 0 && i < total) {
         const img = new Image();
         img.src = pUrl(archive.id, i);
+        imgs.push(img);
       }
     });
+    return () => {
+      // src 를 비우면 브라우저가 진행 중 다운로드를 취소한다.
+      for (const img of imgs) img.src = '';
+    };
   }, [archive.id, index, view, total, pUrl]);
 
-  // 사진집이 열리면 전체 페이지를 순서대로 백그라운드 캐시에 채운다.
-  // 한 페이지 로드 완료 후 다음 시작 — 동시 요청을 1개로 제한해 첫 페이지의
-  // 즉시성을 보장 + 네트워크/서버 부담 분산.
+  // 사진집 전체 백그라운드 프리페치 — 현재 페이지부터 앞으로 순차 채운다.
+  // AbortController 로 뷰어 이탈/다른 사진집 전환 시 진행 중이던 요청(서버 측
+  // 압축풀기 포함)을 즉시 중단 → 떠난 사진집에 자원을 낭비하지 않는다.
+  // fetch 로 HTTP 캐시를 데우면 이후 <img> 가 그 캐시를 그대로 재사용한다.
   useEffect(() => {
     if (total === 0) return;
-    let cancelled = false;
-    let cur = 0;
-    const next = () => {
-      if (cancelled || cur >= total) return;
-      const i = cur++;
-      const img = new Image();
-      const done = () => {
-        if (!cancelled) next();
-      };
-      img.onload = done;
-      img.onerror = done;
-      img.src = pUrl(archive.id, i);
+    const ac = new AbortController();
+    const start = indexRef.current;
+    // 현재 다음 페이지부터 앞으로, 마지막에 현재 페이지(표시용 <img> 가 이미 로드).
+    const order: number[] = [];
+    for (let k = 1; k <= total; k++) order.push((start + k) % total);
+    let i = 0;
+    const next = async (): Promise<void> => {
+      if (ac.signal.aborted || i >= order.length) return;
+      const idx = order[i++];
+      try {
+        const res = await fetch(pUrl(archive.id, idx), {
+          signal: ac.signal,
+          credentials: 'include',
+        });
+        await res.arrayBuffer(); // 본문까지 받아 캐시를 완성
+      } catch {
+        // abort 또는 네트워크 오류 — 무시하고 계속(중단이면 아래에서 멈춤)
+      }
+      if (!ac.signal.aborted) void next();
     };
-    next();
-    return () => {
-      cancelled = true;
-    };
+    void next();
+    return () => ac.abort();
   }, [archive.id, total, pUrl]);
 
   // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
@@ -260,8 +277,6 @@ export function Viewer({
   //   - transition 이 부드럽게 보간
 
   // 보기 모드가 바뀌면 현재 index 위치로 스크롤 동기화 (한 번만)
-  const indexRef = useRef(index);
-  indexRef.current = index;
   useEffect(() => {
     const i = indexRef.current;
     if (view === 'scroll-h') {

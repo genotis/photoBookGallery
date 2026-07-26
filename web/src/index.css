@@ -2225,3 +2225,23 @@ ul.tree ul {
   font-size: 0.78rem;
   font-weight: normal;
 }
+
+/* ---- 규칙 드래그 재정렬 ---- */
+.rule-drag-handle {
+  cursor: grab;
+  color: #6b7280;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  user-select: none;
+}
+.rule-drag-handle:active {
+  cursor: grabbing;
+}
+.classify-rule.dragging {
+  opacity: 0.45;
+}
+.classify-rule.drop-target {
+  border-color: #8ab8e6;
+  box-shadow: inset 0 0 0 1px #8ab8e6;
+}

@@ -262,6 +262,15 @@ export class ImportClassifyRulesDto {
   rules!: ImportRuleItemDto[];
 }
 
+export class ReorderRulesDto {
+  /** 새 순서의 규칙 id 목록. 앞에서부터 priority 0,1,2… 로 설정. */
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @Type(() => Number)
+  @IsInt({ each: true })
+  ids!: number[];
+}
+
 export class ClassifyRevertDto {
   /** 원복할 이동 이력 id 목록. */
   @IsOptional()

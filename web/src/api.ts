@@ -469,6 +469,11 @@ export const api = {
     }),
   removeClassifyRule: (id: number) =>
     request<{ ok: true }>(`/classify/rules/${id}`, { method: 'DELETE' }),
+  reorderClassifyRules: (ids: number[]) =>
+    request<{ ok: true }>('/classify/rules/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   classifyPreview: (ruleIds?: number[], sampleLimit = 50, pathPrefix?: string) =>
     request<ClassifyPreview>('/classify/preview', {
       method: 'POST',

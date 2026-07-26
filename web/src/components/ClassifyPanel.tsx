@@ -226,7 +226,22 @@ function parseRevertStats(payload: string | undefined | null): {
   }
 }
 
-function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
+function RuleRow({
+  rule,
+  roots,
+  dnd,
+}: {
+  rule: ClassifyRule;
+  roots: Root[];
+  dnd?: {
+    onDragStart: () => void;
+    onDragEnter: () => void;
+    onDrop: () => void;
+    onDragEnd: () => void;
+    isTarget: boolean;
+    isDragging: boolean;
+  };
+}) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ClassifyRuleInput>(toForm(rule));
@@ -270,8 +285,37 @@ function RuleRow({ rule, roots }: { rule: ClassifyRule; roots: Root[] }) {
     : '모든 루트';
 
   return (
-    <li className={`classify-rule ${rule.enabled ? '' : 'disabled'}`}>
+    <li
+      className={`classify-rule ${rule.enabled ? '' : 'disabled'} ${
+        dnd?.isTarget ? 'drop-target' : ''
+      } ${dnd?.isDragging ? 'dragging' : ''}`}
+      onDragEnter={dnd ? () => dnd.onDragEnter() : undefined}
+      onDragOver={dnd ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        dnd
+          ? (e) => {
+              e.preventDefault();
+              dnd.onDrop();
+            }
+          : undefined
+      }
+    >
       <div className="classify-rule-head">
+        {dnd && (
+          <span
+            className="rule-drag-handle"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              dnd.onDragStart();
+            }}
+            onDragEnd={() => dnd.onDragEnd()}
+            title="드래그해서 우선순위 변경"
+            aria-label="드래그 핸들"
+          >
+            ⠿
+          </span>
+        )}
         <label className="check small" title="규칙 사용">
           <input
             type="checkbox"
@@ -804,6 +848,34 @@ export function ClassifyPanel() {
 
   const rootList = roots.data ?? [];
 
+  // ---- 드래그 우선순위 재정렬 ----
+  // 서버 순서(priority asc) 를 로컬 order 로 미러링. 드래그 중에는 로컬만 바꾸고
+  // drop 시 서버에 새 순서를 보낸다.
+  const [order, setOrder] = useState<number[]>([]);
+  useEffect(() => {
+    if (rules.data) setOrder(rules.data.map((r) => r.id));
+  }, [rules.data]);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+
+  const reorder = useMutation({
+    mutationFn: (ids: number[]) => api.reorderClassifyRules(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['classifyRules'] }),
+  });
+
+  const moveInOrder = (fromId: number, toId: number): number[] => {
+    if (fromId === toId) return order;
+    const next = order.filter((id) => id !== fromId);
+    const idx = next.indexOf(toId);
+    next.splice(idx, 0, fromId);
+    return next;
+  };
+
+  const ruleById = new Map((rules.data ?? []).map((r) => [r.id, r]));
+  const orderedRules = order
+    .map((id) => ruleById.get(id))
+    .filter((r): r is ClassifyRule => Boolean(r));
+
   return (
     <section className="settings-section">
       <h4>분류 · 태깅 규칙</h4>
@@ -814,9 +886,36 @@ export function ClassifyPanel() {
         이미 분류된 파일도 태그가 채워집니다. 원본 내용은 바뀌지 않습니다.
       </p>
 
+      {orderedRules.length > 1 && (
+        <p className="muted small">⠿ 핸들을 드래그해 우선순위를 바꿉니다.</p>
+      )}
       <ul className="classify-list">
-        {rules.data?.map((r) => (
-          <RuleRow key={r.id} rule={r} roots={rootList} />
+        {orderedRules.map((r) => (
+          <RuleRow
+            key={r.id}
+            rule={r}
+            roots={rootList}
+            dnd={{
+              onDragStart: () => setDragId(r.id),
+              onDragEnter: () => {
+                if (dragId !== null && dragId !== r.id) {
+                  setOverId(r.id);
+                  setOrder(moveInOrder(dragId, r.id));
+                }
+              },
+              onDrop: () => {
+                if (dragId !== null) reorder.mutate(order);
+                setDragId(null);
+                setOverId(null);
+              },
+              onDragEnd: () => {
+                setDragId(null);
+                setOverId(null);
+              },
+              isTarget: overId === r.id,
+              isDragging: dragId === r.id,
+            }}
+          />
         ))}
         {rules.data && rules.data.length === 0 && (
           <li className="muted small">규칙이 없습니다.</li>

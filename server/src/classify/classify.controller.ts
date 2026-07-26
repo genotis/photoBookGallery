@@ -30,6 +30,7 @@ import {
   CreateClassifyRuleDto,
   ImportClassifyRulesDto,
   PatchClassifyRuleDto,
+  ReorderRulesDto,
 } from './dto/classify.dto';
 
 @Controller('classify')
@@ -246,6 +247,23 @@ export class ClassifyController {
     });
     await this.scheduler.reload();
     return updated;
+  }
+
+  /** 드래그 재정렬 — ids 순서대로 priority 0,1,2… 로 설정. */
+  @Post('rules/reorder')
+  @HttpCode(200)
+  async reorderRules(
+    @Body() dto: ReorderRulesDto,
+  ): Promise<{ ok: true }> {
+    await this.prisma.$transaction(
+      dto.ids.map((id, i) =>
+        this.prisma.classifyRule.update({
+          where: { id },
+          data: { priority: i },
+        }),
+      ),
+    );
+    return { ok: true };
   }
 
   @Delete('rules/:id')
