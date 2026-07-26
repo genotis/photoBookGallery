@@ -537,6 +537,26 @@ export function Viewer({
   const isSelected = useMemo(() => (i: number) => selected.has(i), [selected]);
   const showDirToggle = view === 'single' || view === 'scroll-h';
 
+  // ---- 즐겨찾기 토글 ----
+  // 낙관적 로컬 상태(favOptim)로 즉시 반영, 사진집이 바뀌면 초기화.
+  const [favOptim, setFavOptim] = useState<boolean | null>(null);
+  useEffect(() => setFavOptim(null), [archive.id]);
+  const fav = favOptim ?? archive.favorite;
+  const favMut = useMutation({
+    mutationFn: (next: boolean) =>
+      api.patchArchive(archive.id, { favorite: next }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['archives'] });
+      qc.invalidateQueries({ queryKey: ['facets'] });
+      qc.invalidateQueries({ queryKey: ['archive', archive.id] });
+    },
+  });
+  const toggleFav = () => {
+    const next = !fav;
+    setFavOptim(next);
+    favMut.mutate(next);
+  };
+
   return (
     <div
       className={`viewer view-${view} fit-${fit} dir-${dir} ${
@@ -693,6 +713,15 @@ export function Viewer({
               </>
             ) : (
               <>
+                <button
+                  className={`vb-action vb-fav ${fav ? 'on' : ''}`}
+                  onClick={toggleFav}
+                  title={fav ? '즐겨찾기 해제' : '즐겨찾기'}
+                  aria-label={fav ? '즐겨찾기 해제' : '즐겨찾기'}
+                  aria-pressed={fav}
+                >
+                  {fav ? '★' : '☆'}
+                </button>
                 <button
                   className={`vb-action vb-slideshow ${slideshow ? 'on' : ''}`}
                   onClick={toggleSlideshow}

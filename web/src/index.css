@@ -2245,3 +2245,12 @@ ul.tree ul {
   border-color: #8ab8e6;
   box-shadow: inset 0 0 0 1px #8ab8e6;
 }
+
+/* ---- 뷰어 즐겨찾기 토글 ---- */
+.vb-action.vb-fav {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.vb-action.vb-fav.on {
+  color: #ffcf4d;
+}
