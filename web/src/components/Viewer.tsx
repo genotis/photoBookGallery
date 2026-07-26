@@ -807,7 +807,9 @@ export function Viewer({
               }
             >
               <img
-                key={index}
+                // 아카이브(콘텐츠해시)+인덱스로 key → 다른 사진집으로 넘어가면
+                // 이전 img 를 재사용하지 않고 새로 마운트(이전 이미지 잔상 방지).
+                key={`${archive.contentHash}-${index}`}
                 className="viewer-img"
                 src={pUrl(archive.id, index)}
                 alt={`page ${index + 1}`}
@@ -835,7 +837,7 @@ export function Viewer({
         >
           {Array.from({ length: total }, (_, i) => (
             <div
-              key={i}
+              key={`${archive.contentHash}-${i}`}
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
               }`}
@@ -864,7 +866,7 @@ export function Viewer({
         >
           {Array.from({ length: total }, (_, i) => (
             <div
-              key={i}
+              key={`${archive.contentHash}-${i}`}
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
               }`}
@@ -895,7 +897,7 @@ export function Viewer({
           <div className="thumbs-inner" ref={thumbsRef} dir={dir}>
             {Array.from({ length: total }, (_, i) => (
               <button
-                key={i}
+                key={`${archive.contentHash}-${i}`}
                 className={`thumb ${i === index ? 'on' : ''}`}
                 onClick={() => navTo(i)}
                 title={`페이지 ${i + 1}`}
