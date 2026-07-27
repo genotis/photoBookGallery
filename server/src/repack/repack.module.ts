@@ -11,5 +11,6 @@ import { RepackService } from './repack.service';
   imports: [ArchiveModule, ImagesModule, JobsModule, SearchModule],
   controllers: [RepackController],
   providers: [RepackService, RepackLock],
+  exports: [RepackService],
 })
 export class RepackModule {}

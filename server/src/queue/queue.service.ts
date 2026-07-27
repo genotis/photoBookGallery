@@ -43,9 +43,21 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit(): void {
-    const url = this.config.get<string>('redisUrl') ?? 'redis://localhost:6379';
-    this.connection = parseRedisUrl(url);
-    this.logger.log(`큐 백엔드: Redis ${url}`);
+    this.logger.log(`큐 백엔드: Redis (연결 지연 초기화)`);
+  }
+
+  /**
+   * 커넥션을 지연 초기화한다. 워커 등록(registerWorker)이 QueueService 의
+   * onModuleInit 보다 먼저 불릴 수 있어(모듈 init 순서 비보장), 최초 사용 시점에
+   * 보장한다.
+   */
+  private ensureConnection(): ConnectionOptions {
+    if (!this.connection) {
+      const url =
+        this.config.get<string>('redisUrl') ?? 'redis://localhost:6379';
+      this.connection = parseRedisUrl(url);
+    }
+    return this.connection;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -58,7 +70,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     let q = this.queues.get(name);
     if (!q) {
       q = new Queue(name, {
-        connection: this.connection,
+        connection: this.ensureConnection(),
         defaultJobOptions: {
           attempts: 1, // 위험한 작업(재압축)은 기본 1회. 재시도가 안전한 작업만 옵션으로 늘림.
           removeOnComplete: { count: 200 },
@@ -77,7 +89,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     opts?: Partial<WorkerOptions>,
   ): Worker<T> {
     const worker = new Worker<T>(name, handler as never, {
-      connection: this.connection,
+      connection: this.ensureConnection(),
       concurrency: 1, // 단일 사용자 — 동시에 한 작업씩 (재압축 같은 위험 작업 보호)
       ...opts,
     });

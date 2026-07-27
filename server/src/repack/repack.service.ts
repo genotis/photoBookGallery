@@ -1,10 +1,12 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job as BullJob } from 'bullmq';
+import { Archive, LibraryRoot } from '@prisma/client';
 import { mkdir, rename, stat, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path';
 import sharp from 'sharp';
+import { RawEntry } from '../archive/archive-reader.interface';
 import { ArchiveService } from '../archive/archive.service';
 import { ZipWriter } from '../archive/zip.writer';
 import { moveFile } from '../common/file.util';
@@ -116,12 +118,63 @@ export class RepackService implements OnModuleInit {
       throw new Error('제외 대상이 비어 있어 재압축할 필요가 없습니다.');
     }
 
-    await this.jobs.setProgress(jobId, 0.05);
+    await this.physicalRewrite(archive, kept, allEntries, (f) =>
+      this.jobs.setProgress(jobId, f),
+    );
+    await this.jobs.done(jobId);
+  }
+
+  /**
+   * 단일 아카이브를 STORE .cbz 로 정규화(전 엔트리 유지, 압축 제거).
+   * 이미 전부 store 면 변환하지 않는다. Deflate→Store 배치에서 사용.
+   */
+  async normalizeOne(archiveId: number): Promise<'converted' | 'skipped'> {
+    return this.lock.run(archiveId, async () => {
+      const archive = await this.prisma.archive.findUnique({
+        where: { id: archiveId },
+        include: { root: true },
+      });
+      if (!archive || archive.missing) return 'skipped';
+      if (archive.format !== 'zip' && archive.format !== 'cbz') {
+        return 'skipped';
+      }
+      const allEntries = await this.archive.listImageEntries(
+        archive.path,
+        archive.format,
+      );
+      if (allEntries.length === 0) return 'skipped';
+      // 이미 전부 무압축이면 재작성 불필요.
+      if (allEntries.every((e) => e.method === 0)) return 'skipped';
+      await this.physicalRewrite(
+        archive,
+        allEntries,
+        allEntries,
+        async () => 0,
+      );
+      return 'converted';
+    });
+  }
+
+  /**
+   * 물리 재작성: kept 엔트리를 STORE .cbz 로 다시 쓰고 원자 교체 + DB/캐시 갱신.
+   * onProgress(0..1) 로 진행률 전달(잡 진행률 또는 no-op).
+   */
+  private async physicalRewrite(
+    archive: Archive & { root: LibraryRoot },
+    kept: RawEntry[],
+    allEntries: RawEntry[],
+    onProgress: (f: number) => Promise<unknown>,
+  ): Promise<void> {
+    const archiveId = archive.id;
+    await onProgress(0.05);
 
     // 1) 임시 .cbz 생성 (같은 디렉터리 — 원자 이동 보장)
     const activeDir = dirname(archive.path);
     const baseName = basename(archive.path, extname(archive.path));
-    const tempPath = join(activeDir, `.${baseName}.cbz.tmp.${process.pid}.${jobId}`);
+    const tempPath = join(
+      activeDir,
+      `.${baseName}.cbz.tmp.${process.pid}.${archiveId}`,
+    );
     const finalPath = join(activeDir, `${baseName}.cbz`);
 
     // 엔트리 읽기 + 진행률 갱신
@@ -136,19 +189,16 @@ export class RepackService implements OnModuleInit {
       writeEntries.push({ name: e.name, body });
       read += 1;
       // 0.05 → 0.6 구간을 읽기에 할당
-      await this.jobs.setProgress(
-        jobId,
-        0.05 + 0.55 * (read / kept.length),
-      );
+      await onProgress(0.05 + 0.55 * (read / kept.length));
     }
 
     try {
       await this.zipWriter.writeArchive(tempPath, writeEntries);
-      await this.jobs.setProgress(jobId, 0.7);
+      await onProgress(0.7);
 
       // 2) 무결성 검증
       await this.verifyArchive(tempPath, kept.length);
-      await this.jobs.setProgress(jobId, 0.8);
+      await onProgress(0.8);
     } catch (err) {
       await this.safeUnlink(tempPath);
       throw err;
@@ -163,7 +213,7 @@ export class RepackService implements OnModuleInit {
       await this.safeUnlink(tempPath);
       throw new Error(`백업 이동 실패: ${String(err)}`);
     }
-    await this.jobs.setProgress(jobId, 0.85);
+    await onProgress(0.85);
 
     // 4) 임시 → 활성 위치 (원자 교체)
     try {
@@ -176,7 +226,7 @@ export class RepackService implements OnModuleInit {
       await this.safeUnlink(tempPath);
       throw new Error(`활성 위치 교체 실패: ${String(err)}`);
     }
-    await this.jobs.setProgress(jobId, 0.9);
+    await onProgress(0.9);
 
     // 캐시된 압축 핸들 회수 — 원본이 백업으로 빠지고 새 파일이 들어왔으므로,
     // 낡은 핸들이 옛 내용을 서빙하지 않도록 즉시 제거한다.
@@ -233,9 +283,8 @@ export class RepackService implements OnModuleInit {
       allEntries.map((e) => e.name),
     );
 
-    await this.jobs.done(jobId);
     this.logger.log(
-      `재압축 완료 (archive ${archiveId}): ${allEntries.length} → ${newEntries.length} 페이지, ` +
+      `재작성 완료 (archive ${archiveId}): ${allEntries.length} → ${newEntries.length} 페이지, ` +
         `백업=${backupPath}`,
     );
   }

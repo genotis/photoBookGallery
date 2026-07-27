@@ -26,6 +26,7 @@ import { RepackModule } from './repack/repack.module';
 import { ClassifyModule } from './classify/classify.module';
 import { DuplicatesModule } from './duplicates/duplicates.module';
 import { ExclusionsModule } from './exclusions/exclusions.module';
+import { NormalizeModule } from './normalize/normalize.module';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -70,6 +71,7 @@ const isProd = process.env.NODE_ENV === 'production';
     ClassifyModule,
     DuplicatesModule,
     ExclusionsModule,
+    NormalizeModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })

@@ -557,6 +557,28 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // ---- Deflate→Store 정규화 배치 ----
+  normalizeStart: () =>
+    request<{ jobId: number; candidates: number; running: boolean }>(
+      '/normalize/start',
+      { method: 'POST' },
+    ),
+  normalizeCancel: () =>
+    request<{ ok: true; cancelled: boolean }>('/normalize/cancel', {
+      method: 'POST',
+    }),
+  normalizeStatus: () =>
+    request<{
+      job: { id: number; status: string; progress: number } | null;
+      remaining: number;
+      live: {
+        total: number;
+        done: number;
+        converted: number;
+        failed: number;
+      } | null;
+    }>('/normalize/status'),
+
   duplicatesScan: () =>
     request<{ jobId: number }>('/duplicates/scan', { method: 'POST' }),
 

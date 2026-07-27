@@ -9,6 +9,7 @@ import { AppPrefsPanel } from './AppPrefsPanel';
 import { ClassifyPanel } from './ClassifyPanel';
 import { DuplicatesPanel } from './DuplicatesPanel';
 import { ExclusionsPanel } from './ExclusionsPanel';
+import { NormalizePanel } from './NormalizePanel';
 import { ViewerBehaviorPanel } from './ViewerBehaviorPanel';
 import { useJobStream } from './useJobStream';
 
@@ -228,6 +229,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <ViewerBehaviorPanel />
           <ClassifyPanel />
           <ExclusionsPanel />
+          <NormalizePanel />
           <DuplicatesPanel />
         </div>
       </aside>
