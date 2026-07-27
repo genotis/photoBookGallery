@@ -125,13 +125,15 @@ export class IndexerService implements OnModuleInit {
       where: { path: filePath },
     });
 
-    // 경로/크기/수정시각이 모두 동일하면 이미 인덱싱됨 → 스킵
+    // 경로/크기/수정시각이 모두 동일하면 이미 인덱싱됨 → 스킵.
+    // 단, 구버전 색인이라 직독 오프셋이 없으면 엔트리만 가볍게 보강(해시·썸네일 불변).
     if (
       existingByPath &&
       !existingByPath.missing &&
       existingByPath.sizeBytes === sizeBytes &&
       existingByPath.mtime.getTime() === mtime.getTime()
     ) {
+      await this.backfillOffsetsIfNeeded(existingByPath.id, filePath, format);
       return;
     }
 
@@ -170,14 +172,62 @@ export class IndexerService implements OnModuleInit {
         name: e.name,
         order: i,
         sizeBytes: BigInt(e.size),
+        // ZIP 직독용 위치(있을 때만). RAR 등은 undefined → null.
+        method: e.method ?? null,
+        locOffset: e.offset !== undefined ? BigInt(e.offset) : null,
+        compSize:
+          e.compressedSize !== undefined ? BigInt(e.compressedSize) : null,
       })),
     );
     await this.searchIndex.reindex(archiveId);
   }
 
+  /**
+   * 변경 없는 아카이브라도 직독 오프셋이 비어 있으면(구버전 색인) 엔트리만 재적재해
+   * method/locOffset/compSize 를 채운다. 해시·표지·썸네일 캐시는 건드리지 않는다.
+   * ZIP/CBZ 전용(RAR 등은 오프셋 직독을 안 쓰므로 대상 아님).
+   */
+  private async backfillOffsetsIfNeeded(
+    archiveId: number,
+    filePath: string,
+    format: string,
+  ): Promise<void> {
+    if (format !== 'zip' && format !== 'cbz') return;
+    const missing = await this.prisma.entry.findFirst({
+      where: { archiveId, isImage: true, method: null },
+      select: { id: true },
+    });
+    if (!missing) return;
+    try {
+      const images = await this.archive.listImageEntries(filePath, format);
+      await this.replaceEntries(
+        archiveId,
+        images.map((e, i) => ({
+          name: e.name,
+          order: i,
+          sizeBytes: BigInt(e.size),
+          method: e.method ?? null,
+          locOffset: e.offset !== undefined ? BigInt(e.offset) : null,
+          compSize:
+            e.compressedSize !== undefined ? BigInt(e.compressedSize) : null,
+        })),
+      );
+      this.logger.log(`오프셋 보강: ${filePath}`);
+    } catch (err) {
+      this.logger.warn(`오프셋 보강 실패: ${filePath} — ${String(err)}`);
+    }
+  }
+
   private async replaceEntries(
     archiveId: number,
-    entries: { name: string; order: number; sizeBytes: bigint }[],
+    entries: {
+      name: string;
+      order: number;
+      sizeBytes: bigint;
+      method: number | null;
+      locOffset: bigint | null;
+      compSize: bigint | null;
+    }[],
   ): Promise<void> {
     await this.prisma.entry.deleteMany({ where: { archiveId } });
     if (entries.length) {

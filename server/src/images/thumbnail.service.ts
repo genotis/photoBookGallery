@@ -22,6 +22,14 @@ import {
 /** 렌더 우선순위 — 낮을수록 먼저. 보이는 페이지 > 일반 > 프리페치. */
 export type RenderPriority = 0 | 1 | 2;
 
+/** ZIP 직독용 엔트리 위치(있으면 압축 라이브러리 없이 바로 읽음). */
+export interface EntryLoc {
+  method?: number | null;
+  offset?: bigint | number | null;
+  compSize?: bigint | number | null;
+  size?: bigint | number | null;
+}
+
 export type ImageSize = 'thumb' | 'preview' | 'full';
 
 export interface RenderedImage {
@@ -114,6 +122,7 @@ export class ThumbnailService {
     size: ImageSize,
     signal?: AbortSignal,
     priority: RenderPriority = 1,
+    loc?: EntryLoc,
   ): Promise<RenderedImage> {
     throwIfAborted(signal);
 
@@ -121,12 +130,7 @@ export class ThumbnailService {
       const release = await this.scheduler.acquire(priority, signal);
       try {
         throwIfAborted(signal);
-        const buffer = await this.archive.readEntry(
-          archive.path,
-          entryName,
-          archive.format,
-          signal,
-        );
+        const buffer = await this.getRaw(archive, entryName, loc, signal);
         return {
           buffer,
           contentType: imageContentType(entryName),
@@ -164,12 +168,7 @@ export class ThumbnailService {
         };
       }
 
-      const raw = await this.archive.readEntry(
-        archive.path,
-        entryName,
-        archive.format,
-        signal,
-      );
+      const raw = await this.getRaw(archive, entryName, loc, signal);
       throwIfAborted(signal);
 
       const buffer = await this.encode(raw, size, signal);
@@ -182,6 +181,45 @@ export class ThumbnailService {
     } finally {
       release();
     }
+  }
+
+  /**
+   * 원본 바이트 획득. ZIP/CBZ 이고 직독 위치(loc)가 있으면 압축 라이브러리 없이
+   * 오프셋으로 바로 읽는다(콜드 아카이브 중앙 디렉터리 재파싱 회피). 낡은 오프셋
+   * 등으로 실패하면 라이브러리 경로(readEntry)로 폴백. RAR 등은 항상 폴백.
+   */
+  private async getRaw(
+    archive: Archive,
+    entryName: string,
+    loc: EntryLoc | undefined,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    const isZip = archive.format === 'zip' || archive.format === 'cbz';
+    if (isZip && loc && loc.method != null && loc.offset != null) {
+      try {
+        return await this.archive.readEntryDirect(
+          archive.path,
+          {
+            offset: Number(loc.offset),
+            method: Number(loc.method),
+            size: Number(loc.size ?? 0),
+            compSize: Number(loc.compSize ?? loc.size ?? 0),
+          },
+          signal,
+        );
+      } catch (e) {
+        if (isAbortError(e)) throw e;
+        this.logger.debug?.(
+          `직독 실패 → 라이브러리 폴백: ${archive.path} (${entryName})`,
+        );
+      }
+    }
+    return this.archive.readEntry(
+      archive.path,
+      entryName,
+      archive.format,
+      signal,
+    );
   }
 
   /**

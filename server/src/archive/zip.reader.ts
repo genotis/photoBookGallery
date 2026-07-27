@@ -1,8 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { open } from 'fs/promises';
+import { inflateRaw } from 'zlib';
+import { promisify } from 'util';
 import { Readable } from 'stream';
 import StreamZip from 'node-stream-zip';
-import { ArchiveReader, RawEntry } from './archive-reader.interface';
+import {
+  ArchiveReader,
+  EntryLocation,
+  RawEntry,
+} from './archive-reader.interface';
 import { AbortError, SerialQueue, throwIfAborted } from '../common/async.util';
+
+const inflateRawAsync = promisify(inflateRaw);
+const LOCAL_HEADER_SIG = 0x04034b50; // "PK\x03\x04"
+const READ_CHUNK = 1 << 18; // 256KB
+
+/** 저장된 오프셋이 현재 파일과 안 맞음(파일 교체 등) — 호출측이 폴백해야 함. */
+export class StaleOffsetError extends Error {
+  constructor(path: string, offset: number) {
+    super(`오프셋 불일치: ${path} @ ${offset}`);
+    this.name = 'StaleOffsetError';
+  }
+}
 
 /** 유휴 상태에서 열린 zip 핸들을 닫기까지의 시간. */
 const IDLE_MS = 30_000;
@@ -67,8 +86,71 @@ export class ZipReader implements ArchiveReader {
         name: e.name,
         size: e.size,
         isDirectory: e.isDirectory,
+        // 직독용 위치 정보 — 스캔 때 Entry 에 저장된다.
+        method: e.method,
+        offset: e.offset,
+        compressedSize: e.compressedSize,
       }));
     });
+  }
+
+  /**
+   * 오프셋 직독 — 저장된 위치로 로컬 헤더만 읽어 데이터 오프셋을 구한 뒤,
+   * Store 는 바이트 구간을 그대로, Deflate 는 슬라이스를 inflate 해서 반환.
+   * 압축 라이브러리(핸들·중앙 디렉터리 파싱) 없이 파일에서 직접 읽으므로,
+   * 엔트리가 많은 아카이브를 콜드 상태에서 여는 비용(중앙 디렉터리 재파싱)을 없앤다.
+   * 오프셋이 낡았으면(파일 교체) 시그니처 불일치로 감지해 예외 → 호출측 폴백.
+   */
+  async readEntryDirect(
+    archivePath: string,
+    loc: EntryLocation,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    throwIfAborted(signal);
+    const fd = await open(archivePath, 'r');
+    try {
+      const header = Buffer.allocUnsafe(30);
+      const { bytesRead } = await fd.read(header, 0, 30, loc.offset);
+      if (bytesRead < 30 || header.readUInt32LE(0) !== LOCAL_HEADER_SIG) {
+        throw new StaleOffsetError(archivePath, loc.offset);
+      }
+      const nameLen = header.readUInt16LE(26);
+      const extraLen = header.readUInt16LE(28);
+      const dataOffset = loc.offset + 30 + nameLen + extraLen;
+      const compLen = loc.method === 0 ? loc.size : loc.compSize;
+      const raw = await this.readRange(fd, dataOffset, compLen, signal);
+      if (loc.method === 0) return raw; // Store — 바이트가 곧 이미지
+      if (loc.method === 8) {
+        throwIfAborted(signal);
+        return (await inflateRawAsync(raw)) as Buffer;
+      }
+      // 알 수 없는 방식(암호화 등) → 폴백 유도.
+      throw new StaleOffsetError(archivePath, loc.offset);
+    } finally {
+      await fd.close();
+    }
+  }
+
+  /** fd 의 [start, start+length) 를 청크 단위로 읽어 버퍼로. abort 시 중단. */
+  private async readRange(
+    fd: Awaited<ReturnType<typeof open>>,
+    start: number,
+    length: number,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    const out = Buffer.allocUnsafe(length);
+    let pos = 0;
+    while (pos < length) {
+      throwIfAborted(signal);
+      const toRead = Math.min(READ_CHUNK, length - pos);
+      const { bytesRead } = await fd.read(out, pos, toRead, start + pos);
+      if (bytesRead === 0) break; // 예상치 못한 EOF
+      pos += bytesRead;
+    }
+    if (pos !== length) {
+      throw new Error(`짧은 읽기: ${pos}/${length} @ ${start}`);
+    }
+    return out;
   }
 
   async readEntry(

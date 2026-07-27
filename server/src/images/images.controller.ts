@@ -12,9 +12,40 @@ import { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExclusionsService } from '../exclusions/exclusions.service';
 import { isAbortError } from '../common/async.util';
-import { ImageSize, RenderedImage, ThumbnailService } from './thumbnail.service';
+import {
+  EntryLoc,
+  ImageSize,
+  RenderedImage,
+  ThumbnailService,
+} from './thumbnail.service';
 
 const VALID_SIZES: ImageSize[] = ['thumb', 'preview', 'full'];
+
+// 직독 위치 포함 엔트리 조회 셀렉트.
+const ENTRY_SELECT = {
+  name: true,
+  method: true,
+  locOffset: true,
+  compSize: true,
+  sizeBytes: true,
+} as const;
+
+interface EntryRow {
+  name: string;
+  method: number | null;
+  locOffset: bigint | null;
+  compSize: bigint | null;
+  sizeBytes: bigint | null;
+}
+
+function toLoc(e: EntryRow): EntryLoc {
+  return {
+    method: e.method,
+    offset: e.locOffset,
+    compSize: e.compSize,
+    size: e.sizeBytes,
+  };
+}
 
 @Controller('archives/:id')
 export class ImagesController {
@@ -36,9 +67,13 @@ export class ImagesController {
     }
     // 표지 엔트리가 제외 대상(광고 등)이면 첫 표시 엔트리로 대체.
     let coverEntry = archive.coverEntry;
+    let coverRow = await this.coverEntryRow(id, coverEntry);
     if (this.exclusions.hasActive() && this.exclusions.isExcluded(coverEntry)) {
-      const first = await this.firstVisibleEntryName(id);
-      if (first) coverEntry = first;
+      const first = await this.firstVisibleEntry(id);
+      if (first) {
+        coverEntry = first.name;
+        coverRow = first;
+      }
     }
     const signal = this.signalFor(req, res);
     try {
@@ -48,6 +83,7 @@ export class ImagesController {
         'thumb',
         signal,
         1,
+        coverRow ? toLoc(coverRow) : undefined,
       );
       this.send(req, res, img);
     } catch (e) {
@@ -68,10 +104,11 @@ export class ImagesController {
     if (!archive) {
       throw new NotFoundException('아카이브를 찾을 수 없습니다.');
     }
-    const entryName = await this.resolveEntryName(id, index);
-    if (!entryName) {
+    const entry = await this.resolveEntry(id, index);
+    if (!entry) {
       throw new NotFoundException('페이지를 찾을 수 없습니다.');
     }
+    const entryName = entry.name;
     const chosen: ImageSize = VALID_SIZES.includes(size as ImageSize)
       ? (size as ImageSize)
       : 'preview';
@@ -85,6 +122,7 @@ export class ImagesController {
         chosen,
         signal,
         priority,
+        toLoc(entry),
       );
       this.send(req, res, img);
     } catch (e) {
@@ -124,35 +162,45 @@ export class ImagesController {
    * 있으면 표시 엔트리(제외 필터 후)를 순서대로 나열해 i번째를 고른다 —
    * entries() 가 뷰어에 내려주는 목록과 정확히 같은 위치 규칙.
    */
-  private async resolveEntryName(
+  private async resolveEntry(
     archiveId: number,
     index: number,
-  ): Promise<string | null> {
+  ): Promise<EntryRow | null> {
     if (!this.exclusions.hasActive()) {
       const entry = await this.prisma.entry.findFirst({
         where: { archiveId, order: index },
-        select: { name: true },
+        select: ENTRY_SELECT,
       });
-      return entry?.name ?? null;
+      return entry ?? null;
     }
     const rows = await this.prisma.entry.findMany({
       where: { archiveId },
       orderBy: { order: 'asc' },
-      select: { name: true },
+      select: ENTRY_SELECT,
     });
     const visible = this.exclusions.filterVisible(rows);
-    return visible[index]?.name ?? null;
+    return visible[index] ?? null;
   }
 
-  private async firstVisibleEntryName(
+  private async firstVisibleEntry(
     archiveId: number,
-  ): Promise<string | null> {
+  ): Promise<EntryRow | null> {
     const rows = await this.prisma.entry.findMany({
       where: { archiveId },
       orderBy: { order: 'asc' },
-      select: { name: true },
+      select: ENTRY_SELECT,
     });
-    return this.exclusions.filterVisible(rows)[0]?.name ?? null;
+    return this.exclusions.filterVisible(rows)[0] ?? null;
+  }
+
+  private coverEntryRow(
+    archiveId: number,
+    name: string,
+  ): Promise<EntryRow | null> {
+    return this.prisma.entry.findFirst({
+      where: { archiveId, name },
+      select: ENTRY_SELECT,
+    });
   }
 
   private send(req: Request, res: Response, img: RenderedImage): void {

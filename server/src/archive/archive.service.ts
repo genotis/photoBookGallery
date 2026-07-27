@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ArchiveReader, RawEntry } from './archive-reader.interface';
+import {
+  ArchiveReader,
+  EntryLocation,
+  RawEntry,
+} from './archive-reader.interface';
 import { ZipReader } from './zip.reader';
 import { RarReader } from './rar.reader';
 import { isImageEntry, naturalCompare } from '../common/file.util';
@@ -42,6 +46,18 @@ export class ArchiveService {
     signal?: AbortSignal,
   ): Promise<Buffer> {
     return this.reader(format).readEntry(archivePath, entryName, signal);
+  }
+
+  /**
+   * ZIP 오프셋 직독 — 저장된 위치로 압축 라이브러리 없이 바로 읽는다.
+   * ZIP/CBZ 전용. 실패(오프셋 낡음 등) 시 예외 → 호출측이 readEntry 로 폴백.
+   */
+  readEntryDirect(
+    archivePath: string,
+    loc: EntryLocation,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    return this.zip.readEntryDirect(archivePath, loc, signal);
   }
 
   /**

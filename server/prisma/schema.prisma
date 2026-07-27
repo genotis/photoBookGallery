@@ -132,6 +132,12 @@ model Entry {
   height    Int?
   isImage   Boolean  @default(true)
 
+  // 직독(offset-based) 로딩용 ZIP 위치 정보 — 스캔 때 채운다.
+  // null 이면(RAR·재색인 전 데이터) 압축 라이브러리 경로로 폴백.
+  method    Int? // ZIP 압축 방식: 0=Store(무압축), 8=Deflate
+  locOffset BigInt? // 로컬 파일 헤더 오프셋
+  compSize  BigInt? // 압축 크기(Deflate 슬라이스 길이; Store 면 size 와 동일)
+
   @@unique([archiveId, name])
   @@index([archiveId, order])
 }

@@ -214,6 +214,11 @@ export class RepackService implements OnModuleInit {
             order: i,
             sizeBytes: BigInt(e.size),
             isImage: true,
+            // ZIP 직독용 위치(재압축 결과는 cbz 라 항상 채워진다).
+            method: e.method ?? null,
+            locOffset: e.offset !== undefined ? BigInt(e.offset) : null,
+            compSize:
+              e.compressedSize !== undefined ? BigInt(e.compressedSize) : null,
           })),
         });
       }

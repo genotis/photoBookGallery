@@ -2,6 +2,18 @@ export interface RawEntry {
   name: string;
   size: number;
   isDirectory: boolean;
+  // ZIP 직독용(있을 때만). RAR 등은 undefined.
+  method?: number; // 0=Store, 8=Deflate
+  offset?: number; // 로컬 파일 헤더 오프셋
+  compressedSize?: number;
+}
+
+/** 직독을 위한 ZIP 엔트리 위치. */
+export interface EntryLocation {
+  offset: number; // 로컬 헤더 오프셋
+  method: number; // 0=Store, 8=Deflate
+  size: number; // 원본 크기
+  compSize: number; // 압축 크기(Store 면 size 와 동일)
 }
 
 /** 압축 해제 없이 아카이브를 읽는 어댑터. */
