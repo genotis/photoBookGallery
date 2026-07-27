@@ -34,8 +34,10 @@ ENV NODE_ENV=production \
 
 # su-exec: PUID/PGID 로 사용자 전환. shadow: usermod/groupmod 제공.
 # tini: PID 1 시그널 처리. curl: 헬스체크. openssl: prisma 가 libssl 탐지.
-# 7zip: RAR/CBR 등 단일 엔트리를 킬 가능한 서브프로세스로 스트리밍 추출(중단 용이).
-RUN apk add --no-cache su-exec shadow tini curl openssl 7zip
+# 7zip: 단일 엔트리 스트리밍 추출(킬 가능). imagemagick(+webp): 리사이즈+webp
+# 인코딩을 킬 가능한 서브프로세스로 수행(abort 시 즉시 중단). sharp 는 폴백.
+RUN apk add --no-cache su-exec shadow tini curl openssl 7zip \
+    imagemagick imagemagick-webp
 
 # node_modules: 루트(호이스트된 의존성) + 서버 workspace(아카이버 등 미호이스트).
 # Prisma client(.prisma)는 server-build 단계에서 이미 생성됨.

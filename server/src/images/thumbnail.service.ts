@@ -9,7 +9,15 @@ import { Archive } from '@prisma/client';
 import { ArchiveService } from '../archive/archive.service';
 import { hashString } from '../common/hash.util';
 import { imageContentType } from '../common/file.util';
-import { PriorityScheduler, throwIfAborted } from '../common/async.util';
+import {
+  PriorityScheduler,
+  isAbortError,
+  throwIfAborted,
+} from '../common/async.util';
+import {
+  ExtractorMissingError,
+  resizeViaProcess,
+} from '../common/process-extract';
 
 /** 렌더 우선순위 — 낮을수록 먼저. 보이는 페이지 > 일반 > 프리페치. */
 export type RenderPriority = 0 | 1 | 2;
@@ -36,8 +44,10 @@ const SIZE_QUALITY: Record<Exclude<ImageSize, 'full'>, number> = {
 export class ThumbnailService {
   private readonly logger = new Logger(ThumbnailService.name);
   private readonly cacheDir: string;
-  // 동시 렌더(압축풀기+sharp) 상한 — 우선순위 스케줄러로 관리.
+  // 동시 렌더(압축풀기+인코딩) 상한 — 우선순위 스케줄러로 관리.
   private readonly scheduler: PriorityScheduler;
+  // magick 부재 경고를 한 번만 남기기 위한 플래그.
+  private warnedNoMagick = false;
 
   constructor(
     config: ConfigService,
@@ -162,11 +172,7 @@ export class ThumbnailService {
       );
       throwIfAborted(signal);
 
-      const buffer = await sharp(raw)
-        .rotate() // EXIF 방향 보정
-        .resize({ width: SIZE_WIDTH[size], withoutEnlargement: true })
-        .webp({ quality: SIZE_QUALITY[size] })
-        .toBuffer();
+      const buffer = await this.encode(raw, size, signal);
       throwIfAborted(signal);
 
       await mkdir(dirname(file), { recursive: true });
@@ -176,5 +182,45 @@ export class ThumbnailService {
     } finally {
       release();
     }
+  }
+
+  /**
+   * 리사이즈+webp 인코딩. 기본은 킬 가능한 magick 서브프로세스(abort 시 즉시 중단).
+   * magick 부재/실패 시 in-process sharp 로 폴백(중단 불가하지만 이미지 유지).
+   */
+  private async encode(
+    raw: Buffer,
+    size: Exclude<ImageSize, 'full'>,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    try {
+      return await resizeViaProcess(
+        raw,
+        SIZE_WIDTH[size],
+        SIZE_QUALITY[size],
+        signal,
+      );
+    } catch (e) {
+      if (isAbortError(e)) throw e;
+      if (!(e instanceof ExtractorMissingError)) {
+        this.logger.warn(`magick 인코딩 실패 → sharp 폴백: ${String(e)}`);
+      } else if (!this.warnedNoMagick) {
+        this.warnedNoMagick = true;
+        this.logger.warn('magick 미설치 → sharp 로 인코딩(중단 불가)');
+      }
+      throwIfAborted(signal);
+      return this.encodeSharp(raw, size);
+    }
+  }
+
+  private encodeSharp(
+    raw: Buffer,
+    size: Exclude<ImageSize, 'full'>,
+  ): Promise<Buffer> {
+    return sharp(raw)
+      .rotate() // EXIF 방향 보정
+      .resize({ width: SIZE_WIDTH[size], withoutEnlargement: true })
+      .webp({ quality: SIZE_QUALITY[size] })
+      .toBuffer();
   }
 }

@@ -17,7 +17,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/pbg.db
-      - PBG_AUTH_PASSWORD=${PBG_AUTH_PASSWORD:-change_me}
+      - PBG_AUTH_PASSWORD=${PBG_AUTH_PASSWORD:-sale-7809}
       - PBG_SESSION_SECRET=${PBG_SESSION_SECRET:-please_change_this_to_a_long_random_string}
       - PBG_BACKUP_DIR=/app/backups
       - PBG_CACHE_DIR=/app/cache
