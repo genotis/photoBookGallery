@@ -154,6 +154,9 @@ export function Viewer({
 
   const [behavior] = useViewerBehavior();
   const [appPrefs] = useAppPrefs();
+  // 원본 패스스루: 메인/프리페치 이미지를 서버 리사이즈(preview) 대신 원본(full)로.
+  // 썸네일 스트립·스크롤 모드는 여전히 서버 리사이즈(캐시)를 쓴다.
+  const mainSize = appPrefs.originalPassthrough ? 'full' : 'preview';
 
   const [index, setIndex] = useState(0);
   // 항상 최신 index 를 담는 ref — 프리페치·스크롤 동기화가 index 를 deps 에 넣지
@@ -282,7 +285,7 @@ export function Viewer({
     [index + 1, index + 2, index - 1].forEach((i) => {
       if (i >= 0 && i < total) {
         const img = new Image();
-        img.src = pUrl(archive.id, i);
+        img.src = pUrl(archive.id, i, mainSize);
         imgs.push(img);
       }
     });
@@ -290,7 +293,7 @@ export function Viewer({
       // src 를 비우면 브라우저가 진행 중 다운로드를 취소한다.
       for (const img of imgs) img.src = '';
     };
-  }, [archive.id, index, view, total, pUrl]);
+  }, [archive.id, index, view, total, pUrl, mainSize]);
 
   // 지속적 슬라이딩 창 프리페치 — 현재 페이지 앞뒤 '뷰어 로드 갯수'만큼을 유지.
   // - 사진집 단위로 한 번만 뜨고, 현재 페이지는 indexRef 로 따라간다. 페이지를
@@ -319,7 +322,8 @@ export function Viewer({
     // 창 안에서 아직 안 받은 (썸네일 우선, 가까운 순) 다음 작업.
     const nextTask = (): { idx: number; size: string; key: string } | null => {
       const pages = windowPages();
-      for (const size of ['thumb', 'preview'] as const) {
+      // 썸네일 전부 먼저(스트립·빠른 표시) → 그다음 메인 크기(preview 또는 full).
+      for (const size of ['thumb', mainSize]) {
         for (const idx of pages) {
           const key = `${idx}:${size}`;
           if (!fetched.has(key)) return { idx, size, key };
@@ -366,7 +370,7 @@ export function Viewer({
     const workerCount = Math.min(3, Math.max(1, radius));
     for (let i = 0; i < workerCount; i++) void worker();
     return () => ac.abort();
-  }, [archive.id, total, pUrl, appPrefs.viewerPrefetch]);
+  }, [archive.id, total, pUrl, appPrefs.viewerPrefetch, mainSize]);
 
   // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
   useEffect(() => {
@@ -943,7 +947,7 @@ export function Viewer({
                 key={`${archive.contentHash}-${reloadNonce}-${index}`}
                 className="viewer-img"
                 thumbSrc={pUrl(archive.id, index, 'thumb', 'high')}
-                fullSrc={pUrl(archive.id, index, 'preview', 'high')}
+                fullSrc={pUrl(archive.id, index, mainSize, 'high')}
                 alt={`page ${index + 1}`}
               />
               {selectMode && isSelected(index) && (

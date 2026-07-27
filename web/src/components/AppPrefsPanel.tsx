@@ -50,6 +50,17 @@ export function AppPrefsPanel() {
         />
         <span className="muted small">10 ~ 200 범위. 작을수록 서버 부담이 적습니다.</span>
       </div>
+
+      <label className="check small behavior-field">
+        <input
+          type="checkbox"
+          checked={p.originalPassthrough}
+          onChange={(e) => update({ originalPassthrough: e.target.checked })}
+        />
+        원본 직접 표시 (메인 이미지를 서버 리사이즈 없이 원본으로 받아 브라우저가
+        스케일 → NAS 리사이즈 부담 0. 전송량이 늘어 LAN 에서 유리, 원격이면 끄세요.
+        썸네일은 그대로 서버가 생성)
+      </label>
     </section>
   );
 }

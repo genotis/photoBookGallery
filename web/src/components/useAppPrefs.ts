@@ -13,6 +13,13 @@ export interface AppPrefs {
    * 프리징·다음 파일 안 열림이 생기므로, 이 창 크기만큼 나눠서 로드한다.
    */
   viewerPrefetch: number;
+  /**
+   * 원본 직접 표시(패스스루). 켜면 메인 뷰어 이미지를 서버가 리사이즈하지 않고
+   * 추출한 원본 바이트 그대로 받아 브라우저가 스케일한다 → NAS 리사이즈 CPU 0.
+   * 대신 전송량이 늘어 LAN 에서 유리, 원격/모바일이면 끄는 게 낫다. 썸네일은
+   * 그대로 서버가 생성·캐시한다.
+   */
+  originalPassthrough: boolean;
 }
 
 const STORAGE_KEY = 'pbg.appPrefs.v1';
@@ -20,6 +27,7 @@ const STORAGE_KEY = 'pbg.appPrefs.v1';
 const DEFAULT: AppPrefs = {
   randomCount: 20,
   viewerPrefetch: 40,
+  originalPassthrough: false,
 };
 
 function clampInt(
@@ -42,6 +50,10 @@ function load(): AppPrefs {
     return {
       randomCount: clampInt(v.randomCount, 5, 200, DEFAULT.randomCount),
       viewerPrefetch: clampInt(v.viewerPrefetch, 5, 300, DEFAULT.viewerPrefetch),
+      originalPassthrough:
+        typeof v.originalPassthrough === 'boolean'
+          ? v.originalPassthrough
+          : DEFAULT.originalPassthrough,
     };
   } catch {
     return DEFAULT;
