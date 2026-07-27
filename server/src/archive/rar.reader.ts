@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import { createExtractorFromData, Extractor } from 'node-unrar-js';
 import { ArchiveReader, RawEntry } from './archive-reader.interface';
-import { SerialQueue } from '../common/async.util';
+import { SerialQueue, throwIfAborted } from '../common/async.util';
+import { extractWithFallback } from '../common/process-extract';
 
 /** 유휴 상태에서 캐시된 추출기(WASM+전체 데이터)를 버리기까지의 시간. */
 const IDLE_MS = 30_000;
@@ -71,8 +72,26 @@ export class RarReader implements ArchiveReader {
     });
   }
 
-  async readEntry(archivePath: string, entryName: string): Promise<Buffer> {
+  async readEntry(
+    archivePath: string,
+    entryName: string,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    throwIfAborted(signal);
+    // 우선 킬 가능한 7z 서브프로세스로 추출(전체 파일 WASM 적재 없이, abort=kill).
+    // 7z 부재/실패 시 in-process WASM 추출로 폴백.
+    return extractWithFallback(archivePath, entryName, signal, () =>
+      this.readEntryWasm(archivePath, entryName, signal),
+    );
+  }
+
+  private async readEntryWasm(
+    archivePath: string,
+    entryName: string,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
     return this.serial.run(archivePath, async () => {
+      throwIfAborted(signal);
       const extractor = await this.getExtractor(archivePath);
       const extracted = extractor.extract({ files: [entryName] });
       const file = [...extracted.files].find((f) => f.extraction);

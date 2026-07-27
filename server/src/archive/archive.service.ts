@@ -39,8 +39,9 @@ export class ArchiveService {
     archivePath: string,
     entryName: string,
     format: string,
+    signal?: AbortSignal,
   ): Promise<Buffer> {
-    return this.reader(format).readEntry(archivePath, entryName);
+    return this.reader(format).readEntry(archivePath, entryName, signal);
   }
 
   /**

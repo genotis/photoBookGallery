@@ -115,6 +115,7 @@ export class ThumbnailService {
           archive.path,
           entryName,
           archive.format,
+          signal,
         );
         return {
           buffer,
@@ -157,6 +158,7 @@ export class ThumbnailService {
         archive.path,
         entryName,
         archive.format,
+        signal,
       );
       throwIfAborted(signal);
 

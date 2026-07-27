@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Readable } from 'stream';
 import StreamZip from 'node-stream-zip';
 import { ArchiveReader, RawEntry } from './archive-reader.interface';
-import { SerialQueue } from '../common/async.util';
+import { AbortError, SerialQueue, throwIfAborted } from '../common/async.util';
 
 /** 유휴 상태에서 열린 zip 핸들을 닫기까지의 시간. */
 const IDLE_MS = 30_000;
@@ -70,25 +71,61 @@ export class ZipReader implements ArchiveReader {
     });
   }
 
-  async readEntry(archivePath: string, entryName: string): Promise<Buffer> {
+  async readEntry(
+    archivePath: string,
+    entryName: string,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    throwIfAborted(signal);
     return this.serial.run(archivePath, async () => {
       try {
-        return await this.read(archivePath, entryName);
+        return await this.read(archivePath, entryName, signal);
       } catch (err) {
+        if (err instanceof AbortError) throw err;
         // 캐시된 핸들이 상했을 수 있음(파일 교체 등) → 한 번만 새 핸들로 재시도.
         await this.evict(archivePath);
         if (err instanceof NotFoundException) throw err;
-        return this.read(archivePath, entryName);
+        return this.read(archivePath, entryName, signal);
       }
     });
   }
 
-  private async read(archivePath: string, entryName: string): Promise<Buffer> {
+  /**
+   * 엔트리를 스트림으로 읽어 버퍼로 모은다(랜덤 액세스 — 중앙 디렉터리로 오프셋
+   * 탐색). abort 되면 스트림을 destroy 해 진행 중 inflate 를 즉시 중단한다.
+   */
+  private async read(
+    archivePath: string,
+    entryName: string,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
     const { zip } = this.getHandle(archivePath);
-    const data = await zip.entryData(entryName);
-    if (!data) {
-      throw new NotFoundException(`엔트리를 찾을 수 없습니다: ${entryName}`);
-    }
-    return data;
+    const stream = (await zip.stream(entryName)) as Readable;
+    return new Promise<Buffer>((resolve, reject) => {
+      if (signal?.aborted) {
+        stream.destroy();
+        reject(new AbortError());
+        return;
+      }
+      const chunks: Buffer[] = [];
+      const cleanup = () => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+      };
+      const onAbort = () => {
+        stream.destroy();
+        cleanup();
+        reject(new AbortError());
+      };
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      stream.on('data', (c: Buffer) => chunks.push(c));
+      stream.on('end', () => {
+        cleanup();
+        resolve(Buffer.concat(chunks));
+      });
+      stream.on('error', (e) => {
+        cleanup();
+        reject(signal?.aborted ? new AbortError() : e);
+      });
+    });
   }
 }
