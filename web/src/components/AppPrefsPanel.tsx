@@ -28,14 +28,15 @@ export function AppPrefsPanel() {
       </div>
 
       <p className="muted small">
-        뷰어가 한 번에 미리 로드할 페이지 수입니다. 페이지가 아주 많은 사진집에서
-        전체를 한꺼번에 로드하면 프리징·다음 파일 안 열림이 생기므로, 이 창 크기만큼
-        나눠서 로드하고 페이지를 넘기면 다음 구간을 이어서 로드합니다.
+        뷰어가 현재 페이지 <strong>앞뒤로</strong> 미리 로드(리사이즈 포함)할 페이지
+        수입니다. 창은 페이지를 넘기면 따라 이동하며 계속 이어서 처리하고, 이미
+        처리한 페이지는 유지합니다. 크게 잡을수록 넘김이 매끄럽지만 서버 부담이
+        커집니다.
       </p>
 
       <div className="behavior-field">
         <label className="behavior-label" htmlFor="viewer-prefetch">
-          뷰어 로드 갯수 — <strong>{p.viewerPrefetch}개</strong>
+          뷰어 로드 갯수 (앞뒤 각각) — <strong>{p.viewerPrefetch}개</strong>
         </label>
         <input
           id="viewer-prefetch"

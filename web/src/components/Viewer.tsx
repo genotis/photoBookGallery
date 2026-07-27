@@ -292,46 +292,81 @@ export function Viewer({
     };
   }, [archive.id, index, view, total, pUrl]);
 
-  // 백그라운드 프리페치 — 현재 페이지 중심의 "창" 만큼만 나눠서 로드.
-  // - 전체를 한꺼번에 당기면 페이지가 아주 많은 사진집에서 서버 압축풀기 큐가
-  //   밀려 프리징·다음 사진집 안 열림이 생긴다. 창 크기(appPrefs.viewerPrefetch)
-  //   만큼만 당기고, 페이지를 넘기면 창이 이동해 다음 구간을 이어서 로드한다.
-  // - 순서: 현재 페이지에서 가까운 순. 썸네일을 먼저 → 그다음 미리보기.
-  // - AbortController 로 페이지 이동/사진집 전환/뷰어 이탈 시 진행 중 요청(서버 측
-  //   압축풀기 포함)을 즉시 중단. 이미 받은 URL 은 immutable 캐시라 재요청도 저렴.
-  // - 현재 보이는 페이지는 <img src> 가 직접 로드하므로 이 창과 무관하게 열린다.
+  // 지속적 슬라이딩 창 프리페치 — 현재 페이지 앞뒤 '뷰어 로드 갯수'만큼을 유지.
+  // - 사진집 단위로 한 번만 뜨고, 현재 페이지는 indexRef 로 따라간다. 페이지를
+  //   넘겨도 abort/재시작하지 않으므로 진행 중 렌더(킬 가능)를 죽이지 않고,
+  //   이미 처리된 건 살린 채 새로 들어온 앞쪽 페이지를 이어서 계속 처리한다.
+  // - 순서: 현재 페이지에서 가까운 순. 썸네일 전부 먼저 → 그다음 미리보기.
+  // - 프리페치는 pr=low 라 보이는 페이지(pr=high)에 항상 밀린다. 서버 스케줄러가
+  //   실제 동시성을 제한하므로 클라이언트는 소수 워커로 창을 데운다.
+  // - 사진집 전환/뷰어 이탈 시에만 abort(진행 중 서버 렌더까지 중단).
   useEffect(() => {
     if (total === 0) return;
     const ac = new AbortController();
-    const windowSize = Math.max(1, appPrefs.viewerPrefetch);
-    // 현재 페이지 중심으로 최대 windowSize개를 거리순으로 모은다.
-    const dist: number[] = [index];
-    for (let d = 1; dist.length < windowSize && d < total; d++) {
-      if (index + d < total) dist.push(index + d);
-      if (dist.length < windowSize && index - d >= 0) dist.push(index - d);
-    }
-    const tasks: { idx: number; size: string }[] = [
-      ...dist.map((idx) => ({ idx, size: 'thumb' })),
-      ...dist.map((idx) => ({ idx, size: 'preview' })),
-    ];
-    let t = 0;
-    const next = async (): Promise<void> => {
-      if (ac.signal.aborted || t >= tasks.length) return;
-      const { idx, size } = tasks[t++];
-      try {
-        const res = await fetch(pUrl(archive.id, idx, size, 'low'), {
-          signal: ac.signal,
-          credentials: 'include',
-        });
-        await res.arrayBuffer(); // 본문까지 받아 캐시를 완성
-      } catch {
-        // abort 또는 네트워크 오류 — 무시하고 계속(중단이면 아래에서 멈춤)
+    const radius = Math.max(1, appPrefs.viewerPrefetch);
+    const fetched = new Set<string>();
+
+    // 현재 페이지(indexRef) 중심 ±radius 를 가까운 순으로.
+    const windowPages = (): number[] => {
+      const center = indexRef.current;
+      const pages = [center];
+      for (let d = 1; d <= radius; d++) {
+        if (center + d < total) pages.push(center + d);
+        if (center - d >= 0) pages.push(center - d);
       }
-      if (!ac.signal.aborted) void next();
+      return pages;
     };
-    void next();
+    // 창 안에서 아직 안 받은 (썸네일 우선, 가까운 순) 다음 작업.
+    const nextTask = (): { idx: number; size: string; key: string } | null => {
+      const pages = windowPages();
+      for (const size of ['thumb', 'preview'] as const) {
+        for (const idx of pages) {
+          const key = `${idx}:${size}`;
+          if (!fetched.has(key)) return { idx, size, key };
+        }
+      }
+      return null;
+    };
+    const sleep = (ms: number): Promise<void> =>
+      new Promise((resolve) => {
+        const t = window.setTimeout(resolve, ms);
+        ac.signal.addEventListener(
+          'abort',
+          () => {
+            window.clearTimeout(t);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+
+    const worker = async (): Promise<void> => {
+      while (!ac.signal.aborted) {
+        const task = nextTask();
+        if (!task) {
+          // 창이 다 데워짐 — 페이지가 이동할 때까지 잠깐 대기 후 재확인.
+          await sleep(250);
+          continue;
+        }
+        // 받기 전에 표시(중복 방지). 실패해도 재시도하지 않는다 — 실제로 보게
+        // 되면 pr=high 로 직접 로드되므로 프리페치 실패는 치명적이지 않다.
+        fetched.add(task.key);
+        try {
+          const res = await fetch(pUrl(archive.id, task.idx, task.size, 'low'), {
+            signal: ac.signal,
+            credentials: 'include',
+          });
+          await res.arrayBuffer();
+        } catch {
+          // abort 또는 네트워크 오류 — 무시
+        }
+      }
+    };
+
+    const workerCount = Math.min(3, Math.max(1, radius));
+    for (let i = 0; i < workerCount; i++) void worker();
     return () => ac.abort();
-  }, [archive.id, total, pUrl, index, appPrefs.viewerPrefetch]);
+  }, [archive.id, total, pUrl, appPrefs.viewerPrefetch]);
 
   // 썸네일 스트립 — 현재 index 가 바뀔 때마다 가운데로 정렬
   useEffect(() => {
