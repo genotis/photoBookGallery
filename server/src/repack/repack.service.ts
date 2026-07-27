@@ -178,6 +178,11 @@ export class RepackService implements OnModuleInit {
     }
     await this.jobs.setProgress(jobId, 0.9);
 
+    // 캐시된 압축 핸들 회수 — 원본이 백업으로 빠지고 새 파일이 들어왔으므로,
+    // 낡은 핸들이 옛 내용을 서빙하지 않도록 즉시 제거한다.
+    await this.archive.evict(archive.path);
+    if (finalPath !== archive.path) await this.archive.evict(finalPath);
+
     // 5) DB 갱신
     const newStat = await stat(finalPath);
     const newHash = await hashFile(finalPath);

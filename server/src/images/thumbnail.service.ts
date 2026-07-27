@@ -2,12 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { cpus } from 'os';
 import { dirname, join } from 'path';
 import sharp from 'sharp';
 import { Archive } from '@prisma/client';
 import { ArchiveService } from '../archive/archive.service';
 import { hashString } from '../common/hash.util';
 import { imageContentType } from '../common/file.util';
+import { Semaphore, throwIfAborted } from '../common/async.util';
 
 export type ImageSize = 'thumb' | 'preview' | 'full';
 
@@ -31,12 +33,21 @@ const SIZE_QUALITY: Record<Exclude<ImageSize, 'full'>, number> = {
 export class ThumbnailService {
   private readonly logger = new Logger(ThumbnailService.name);
   private readonly cacheDir: string;
+  // 동시 렌더(압축풀기+sharp) 상한 — 요청이 몰려도 CPU 포화를 막는다.
+  private readonly sem: Semaphore;
 
   constructor(
     config: ConfigService,
     private readonly archive: ArchiveService,
   ) {
     this.cacheDir = config.get<string>('cacheDir') ?? './cache';
+    const configured = config.get<number>('imageConcurrency') ?? 0;
+    const concurrency =
+      configured && configured > 0
+        ? configured
+        : Math.max(2, cpus().length - 1);
+    this.sem = new Semaphore(concurrency);
+    this.logger.log(`이미지 렌더 동시성 = ${concurrency}`);
   }
 
   /**
@@ -78,18 +89,27 @@ export class ThumbnailService {
     archive: Archive,
     entryName: string,
     size: ImageSize,
+    signal?: AbortSignal,
   ): Promise<RenderedImage> {
+    throwIfAborted(signal);
+
     if (size === 'full') {
-      const buffer = await this.archive.readEntry(
-        archive.path,
-        entryName,
-        archive.format,
-      );
-      return {
-        buffer,
-        contentType: imageContentType(entryName),
-        etag: await hashString(`${archive.contentHash}:${entryName}:full`),
-      };
+      const release = await this.sem.acquire(signal);
+      try {
+        throwIfAborted(signal);
+        const buffer = await this.archive.readEntry(
+          archive.path,
+          entryName,
+          archive.format,
+        );
+        return {
+          buffer,
+          contentType: imageContentType(entryName),
+          etag: await hashString(`${archive.contentHash}:${entryName}:full`),
+        };
+      } finally {
+        release();
+      }
     }
 
     const key = await hashString(
@@ -97,6 +117,7 @@ export class ThumbnailService {
     );
     const file = join(this.cacheDir, key.slice(0, 2), `${key}.webp`);
 
+    // 캐시 히트는 세마포어 밖에서 즉시 처리(가벼운 파일 읽기).
     if (existsSync(file)) {
       return {
         buffer: await readFile(file),
@@ -105,20 +126,39 @@ export class ThumbnailService {
       };
     }
 
-    const raw = await this.archive.readEntry(
-      archive.path,
-      entryName,
-      archive.format,
-    );
-    const buffer = await sharp(raw)
-      .rotate() // EXIF 방향 보정
-      .resize({ width: SIZE_WIDTH[size], withoutEnlargement: true })
-      .webp({ quality: SIZE_QUALITY[size] })
-      .toBuffer();
+    // 캐시 미스 — 압축풀기+sharp 는 동시성 제한 안에서. 취소되면 대기 중 탈출.
+    const release = await this.sem.acquire(signal);
+    try {
+      throwIfAborted(signal);
+      // 대기하는 동안 다른 요청이 이미 만들어 놨을 수 있으니 재확인.
+      if (existsSync(file)) {
+        return {
+          buffer: await readFile(file),
+          contentType: 'image/webp',
+          etag: key,
+        };
+      }
 
-    await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, buffer);
+      const raw = await this.archive.readEntry(
+        archive.path,
+        entryName,
+        archive.format,
+      );
+      throwIfAborted(signal);
 
-    return { buffer, contentType: 'image/webp', etag: key };
+      const buffer = await sharp(raw)
+        .rotate() // EXIF 방향 보정
+        .resize({ width: SIZE_WIDTH[size], withoutEnlargement: true })
+        .webp({ quality: SIZE_QUALITY[size] })
+        .toBuffer();
+      throwIfAborted(signal);
+
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, buffer);
+
+      return { buffer, contentType: 'image/webp', etag: key };
+    } finally {
+      release();
+    }
   }
 }

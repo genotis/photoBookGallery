@@ -803,6 +803,13 @@ select {
   max-height: 100%;
   object-fit: contain;
 }
+/* 썸네일 우선: 원본 로드 전 썸네일을 살짝 블러 처리(blur-up), 로드되면 선명하게. */
+.viewer-single .viewer-img.img-thumb-first {
+  filter: blur(1.5px);
+}
+.viewer-single .viewer-img {
+  transition: filter 180ms ease;
+}
 .viewer-single .nav {
   position: absolute;
   top: 0;

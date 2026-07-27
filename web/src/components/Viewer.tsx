@@ -76,6 +76,50 @@ function savePrefs(p: Prefs): void {
   }
 }
 
+/**
+ * 썸네일 우선 이미지 — 작고 빠른 썸네일을 먼저 보여주고, 원본(preview)이 로드되면
+ * 교체한다. 단일 페이지 메인 뷰에 사용. 페이지 전환(key 변경) 시 remount 되며,
+ * 언마운트하면 진행 중이던 preview 로드를 취소한다.
+ */
+function ProgressiveImg({
+  thumbSrc,
+  fullSrc,
+  alt,
+  className,
+}: {
+  thumbSrc: string;
+  fullSrc: string;
+  alt: string;
+  className?: string;
+}) {
+  const [src, setSrc] = useState(thumbSrc);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    setSrc(thumbSrc);
+    setLoaded(false);
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (!cancelled) {
+        setSrc(fullSrc);
+        setLoaded(true);
+      }
+    };
+    img.src = fullSrc;
+    return () => {
+      cancelled = true;
+      img.src = ''; // 진행 중 다운로드 취소
+    };
+  }, [thumbSrc, fullSrc]);
+  return (
+    <img
+      className={`${className ?? ''} ${loaded ? '' : 'img-thumb-first'}`}
+      src={src}
+      alt={alt}
+    />
+  );
+}
+
 export function Viewer({
   archive,
   onClose,
@@ -853,12 +897,13 @@ export function Viewer({
                 selectMode ? () => toggle(index) : onCenterClick
               }
             >
-              <img
+              <ProgressiveImg
                 // 아카이브(콘텐츠해시)+인덱스로 key → 다른 사진집으로 넘어가면
                 // 이전 img 를 재사용하지 않고 새로 마운트(이전 이미지 잔상 방지).
                 key={`${archive.contentHash}-${reloadNonce}-${index}`}
                 className="viewer-img"
-                src={pUrl(archive.id, index)}
+                thumbSrc={pUrl(archive.id, index, 'thumb')}
+                fullSrc={pUrl(archive.id, index)}
                 alt={`page ${index + 1}`}
               />
               {selectMode && isSelected(index) && (

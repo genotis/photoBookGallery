@@ -11,6 +11,7 @@ import {
 import { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExclusionsService } from '../exclusions/exclusions.service';
+import { isAbortError } from '../common/async.util';
 import { ImageSize, RenderedImage, ThumbnailService } from './thumbnail.service';
 
 const VALID_SIZES: ImageSize[] = ['thumb', 'preview', 'full'];
@@ -39,8 +40,18 @@ export class ImagesController {
       const first = await this.firstVisibleEntryName(id);
       if (first) coverEntry = first;
     }
-    const img = await this.thumbnails.render(archive, coverEntry, 'thumb');
-    this.send(req, res, img);
+    const signal = this.signalFor(req, res);
+    try {
+      const img = await this.thumbnails.render(
+        archive,
+        coverEntry,
+        'thumb',
+        signal,
+      );
+      this.send(req, res, img);
+    } catch (e) {
+      this.handleError(e, res, signal);
+    }
   }
 
   @Get('page/:index')
@@ -62,8 +73,40 @@ export class ImagesController {
     const chosen: ImageSize = VALID_SIZES.includes(size as ImageSize)
       ? (size as ImageSize)
       : 'preview';
-    const img = await this.thumbnails.render(archive, entryName, chosen);
-    this.send(req, res, img);
+    const signal = this.signalFor(req, res);
+    try {
+      const img = await this.thumbnails.render(
+        archive,
+        entryName,
+        chosen,
+        signal,
+      );
+      this.send(req, res, img);
+    } catch (e) {
+      this.handleError(e, res, signal);
+    }
+  }
+
+  /**
+   * 클라이언트 연결이 끊기면 abort 되는 신호를 만든다. 뷰어에서 페이지를
+   * 넘기거나 사진집을 전환하면 브라우저가 진행 중 요청을 취소 → 여기서 abort 되어
+   * 서버의 압축풀기/sharp 도 중단되고, 대기 중이던 작업은 슬롯을 잡지 않는다.
+   */
+  private signalFor(req: Request, res: Response): AbortSignal {
+    const ac = new AbortController();
+    req.on('close', () => {
+      if (!res.writableEnded) ac.abort();
+    });
+    return ac.signal;
+  }
+
+  /** 취소면 조용히 종료(499), 그 외는 상위로 던져 예외 필터가 처리. */
+  private handleError(e: unknown, res: Response, signal: AbortSignal): void {
+    if (signal.aborted || isAbortError(e)) {
+      if (!res.headersSent) res.status(499).end();
+      return;
+    }
+    throw e;
   }
 
   /**

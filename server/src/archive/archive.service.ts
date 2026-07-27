@@ -42,4 +42,16 @@ export class ArchiveService {
   ): Promise<Buffer> {
     return this.reader(format).readEntry(archivePath, entryName);
   }
+
+  /**
+   * 캐시된 압축 핸들을 회수. 파일이 교체/삭제됐을 때(재압축·재색인) 호출해
+   * 낡은 핸들이 옛 내용을 서빙하지 않도록 한다. 포맷을 몰라도 안전하게
+   * 모든 리더에서 회수한다.
+   */
+  async evict(archivePath: string): Promise<void> {
+    await Promise.all([
+      this.zip.evict?.(archivePath),
+      this.rar.evict?.(archivePath),
+    ]);
+  }
 }

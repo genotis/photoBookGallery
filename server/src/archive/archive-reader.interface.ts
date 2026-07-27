@@ -8,4 +8,6 @@ export interface RawEntry {
 export interface ArchiveReader {
   listEntries(archivePath: string): Promise<RawEntry[]>;
   readEntry(archivePath: string, entryName: string): Promise<Buffer>;
+  /** 캐시된 핸들이 있으면 회수(파일 교체/삭제 시). 없으면 no-op. */
+  evict?(archivePath: string): Promise<void>;
 }
