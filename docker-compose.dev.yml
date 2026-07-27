@@ -33,6 +33,9 @@ services:
       - PBG_BACKUP_DIR=/app/backups
       - PBG_CACHE_DIR=/app/cache
       - REDIS_URL=redis://redis:6379
+      # 이미지 렌더 동시성(미설정 시 min(4, 코어수-1)) / libuv 스레드풀
+      - PBG_IMAGE_CONCURRENCY=${PBG_IMAGE_CONCURRENCY:-0}
+      - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-8}
       # 로컬 Mac 사용자에 맞춘 UID/GID — 바인드 마운트(/media)에 쓰기 위해.
       - PUID=${PUID:-502}
       - PGID=${PGID:-20}

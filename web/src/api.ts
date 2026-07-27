@@ -587,6 +587,8 @@ export const pageUrl = (
   index: number,
   size = 'preview',
   contentHash?: string | null,
+  priority?: 'high' | 'low',
 ) =>
   `/api/archives/${id}/page/${index}?size=${size}` +
-  (contentHash ? `&v=${contentHash.slice(0, 12)}` : '');
+  (contentHash ? `&v=${contentHash.slice(0, 12)}` : '') +
+  (priority ? `&pr=${priority}` : '');

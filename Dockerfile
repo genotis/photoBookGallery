@@ -27,7 +27,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production \
     PUID=1026 \
-    PGID=100
+    PGID=100 \
+    # libuv 스레드풀 확대 — sharp 렌더가 fs 캐시 읽기(같은 풀, 기본 4)를 굶기지
+    # 않도록 여유 확보. 렌더 동시성은 앱 내부 스케줄러가 별도로 제한한다.
+    UV_THREADPOOL_SIZE=8
 
 # su-exec: PUID/PGID 로 사용자 전환. shadow: usermod/groupmod 제공.
 # tini: PID 1 시그널 처리. curl: 헬스체크. openssl: prisma 가 libssl 탐지.

@@ -9,7 +9,10 @@ import { Archive } from '@prisma/client';
 import { ArchiveService } from '../archive/archive.service';
 import { hashString } from '../common/hash.util';
 import { imageContentType } from '../common/file.util';
-import { Semaphore, throwIfAborted } from '../common/async.util';
+import { PriorityScheduler, throwIfAborted } from '../common/async.util';
+
+/** 렌더 우선순위 — 낮을수록 먼저. 보이는 페이지 > 일반 > 프리페치. */
+export type RenderPriority = 0 | 1 | 2;
 
 export type ImageSize = 'thumb' | 'preview' | 'full';
 
@@ -33,21 +36,31 @@ const SIZE_QUALITY: Record<Exclude<ImageSize, 'full'>, number> = {
 export class ThumbnailService {
   private readonly logger = new Logger(ThumbnailService.name);
   private readonly cacheDir: string;
-  // 동시 렌더(압축풀기+sharp) 상한 — 요청이 몰려도 CPU 포화를 막는다.
-  private readonly sem: Semaphore;
+  // 동시 렌더(압축풀기+sharp) 상한 — 우선순위 스케줄러로 관리.
+  private readonly scheduler: PriorityScheduler;
 
   constructor(
     config: ConfigService,
     private readonly archive: ArchiveService,
   ) {
     this.cacheDir = config.get<string>('cacheDir') ?? './cache';
+
+    // 동시성은 "낮게" 유지하는 게 핵심. 높으면 libuv 스레드풀(fs 캐시 읽기와
+    // 공유, 기본 4)이 sharp 로 포화돼 캐시 히트·다음 사진집까지 굶고, 진행 중
+    // 작업이 많아 취소가 무의미해진다. 낮으면 대부분의 프리페치가 대기열에 머물러
+    // 사진집 전환 시 즉시 드롭되고, 보이는 페이지가 곧바로 실행된다.
     const configured = config.get<number>('imageConcurrency') ?? 0;
     const concurrency =
       configured && configured > 0
         ? configured
-        : Math.max(2, cpus().length - 1);
-    this.sem = new Semaphore(concurrency);
-    this.logger.log(`이미지 렌더 동시성 = ${concurrency}`);
+        : Math.max(2, Math.min(4, cpus().length - 1));
+    this.scheduler = new PriorityScheduler(concurrency);
+
+    // sharp 인스턴스당 libvips 스레드를 1개로 제한 → 스레드 폭증 방지.
+    // 병렬성은 위 스케줄러가 관리하고, libuv 스레드풀 여유를 fs 에 남긴다.
+    sharp.concurrency(1);
+
+    this.logger.log(`이미지 렌더 동시성 = ${concurrency}, sharp concurrency = 1`);
   }
 
   /**
@@ -90,11 +103,12 @@ export class ThumbnailService {
     entryName: string,
     size: ImageSize,
     signal?: AbortSignal,
+    priority: RenderPriority = 1,
   ): Promise<RenderedImage> {
     throwIfAborted(signal);
 
     if (size === 'full') {
-      const release = await this.sem.acquire(signal);
+      const release = await this.scheduler.acquire(priority, signal);
       try {
         throwIfAborted(signal);
         const buffer = await this.archive.readEntry(
@@ -117,7 +131,7 @@ export class ThumbnailService {
     );
     const file = join(this.cacheDir, key.slice(0, 2), `${key}.webp`);
 
-    // 캐시 히트는 세마포어 밖에서 즉시 처리(가벼운 파일 읽기).
+    // 캐시 히트는 스케줄러 밖에서 즉시 처리(가벼운 파일 읽기).
     if (existsSync(file)) {
       return {
         buffer: await readFile(file),
@@ -127,7 +141,7 @@ export class ThumbnailService {
     }
 
     // 캐시 미스 — 압축풀기+sharp 는 동시성 제한 안에서. 취소되면 대기 중 탈출.
-    const release = await this.sem.acquire(signal);
+    const release = await this.scheduler.acquire(priority, signal);
     try {
       throwIfAborted(signal);
       // 대기하는 동안 다른 요청이 이미 만들어 놨을 수 있으니 재확인.

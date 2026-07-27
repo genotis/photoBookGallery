@@ -24,18 +24,27 @@ export function throwIfAborted(signal?: AbortSignal): void {
 }
 
 interface Waiter {
+  priority: number;
+  seq: number;
   grant: () => void;
   onAbort?: () => void;
 }
 
-/** 카운팅 세마포어. acquire 는 슬롯을 얻을 때까지 대기(취소 가능). */
-export class Semaphore {
+/**
+ * 우선순위 스케줄러 — 동시 실행 수를 max 로 제한하되, 대기열에서 우선순위가
+ * 높은(숫자가 작은) 작업을 먼저 깨운다. 같은 우선순위면 FIFO.
+ * 대기 중 취소되면 슬롯을 잡지 않고 즉시 대기열에서 빠진다(핵심: 프리페치처럼
+ * 아직 시작 안 한 작업은 사진집을 넘기는 순간 전부 드롭 → 보이는 페이지가 곧바로 실행).
+ */
+export class PriorityScheduler {
   private active = 0;
+  private seq = 0;
   private readonly waiters: Waiter[] = [];
 
   constructor(private readonly max: number) {}
 
-  async acquire(signal?: AbortSignal): Promise<() => void> {
+  /** priority: 낮을수록 먼저. 0=보이는 페이지, 1=일반, 2=프리페치. */
+  async acquire(priority = 1, signal?: AbortSignal): Promise<() => void> {
     throwIfAborted(signal);
     if (this.active < this.max) {
       this.active += 1;
@@ -43,6 +52,8 @@ export class Semaphore {
     }
     return new Promise<() => void>((resolve, reject) => {
       const waiter: Waiter = {
+        priority,
+        seq: this.seq++,
         grant: () => {
           if (waiter.onAbort && signal) {
             signal.removeEventListener('abort', waiter.onAbort);
@@ -69,9 +80,22 @@ export class Semaphore {
       if (released) return;
       released = true;
       this.active -= 1;
-      const next = this.waiters.shift();
-      if (next) next.grant();
+      this.wakeNext();
     };
+  }
+
+  private wakeNext(): void {
+    if (this.waiters.length === 0) return;
+    let best = 0;
+    for (let i = 1; i < this.waiters.length; i++) {
+      const w = this.waiters[i];
+      const b = this.waiters[best];
+      if (w.priority < b.priority || (w.priority === b.priority && w.seq < b.seq)) {
+        best = i;
+      }
+    }
+    const [w] = this.waiters.splice(best, 1);
+    w.grant();
   }
 }
 

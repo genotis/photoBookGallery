@@ -47,6 +47,7 @@ export class ImagesController {
         coverEntry,
         'thumb',
         signal,
+        1,
       );
       this.send(req, res, img);
     } catch (e) {
@@ -59,6 +60,7 @@ export class ImagesController {
     @Param('id', ParseIntPipe) id: number,
     @Param('index', ParseIntPipe) index: number,
     @Query('size') size: string,
+    @Query('pr') pr: string,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
@@ -73,6 +75,8 @@ export class ImagesController {
     const chosen: ImageSize = VALID_SIZES.includes(size as ImageSize)
       ? (size as ImageSize)
       : 'preview';
+    // pr: high=0(보이는 페이지) / low=2(프리페치) / 그 외=1(일반)
+    const priority = pr === 'high' ? 0 : pr === 'low' ? 2 : 1;
     const signal = this.signalFor(req, res);
     try {
       const img = await this.thumbnails.render(
@@ -80,6 +84,7 @@ export class ImagesController {
         entryName,
         chosen,
         signal,
+        priority,
       );
       this.send(req, res, img);
     } catch (e) {
@@ -91,12 +96,16 @@ export class ImagesController {
    * 클라이언트 연결이 끊기면 abort 되는 신호를 만든다. 뷰어에서 페이지를
    * 넘기거나 사진집을 전환하면 브라우저가 진행 중 요청을 취소 → 여기서 abort 되어
    * 서버의 압축풀기/sharp 도 중단되고, 대기 중이던 작업은 슬롯을 잡지 않는다.
+   * res 의 'close' 는 응답 완료·연결 종료 모두에서 발생 → writableEnded 로 구분.
    */
   private signalFor(req: Request, res: Response): AbortSignal {
     const ac = new AbortController();
-    req.on('close', () => {
+    const onClose = () => {
       if (!res.writableEnded) ac.abort();
-    });
+    };
+    res.on('close', onClose);
+    req.on('close', onClose);
+    req.on('aborted', () => ac.abort());
     return ac.signal;
   }
 

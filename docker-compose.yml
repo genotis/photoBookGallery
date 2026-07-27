@@ -23,6 +23,10 @@ services:
       - PBG_CACHE_DIR=/app/cache
       - PBG_CACHE_MAX_MB=${PBG_CACHE_MAX_MB:-2048}
       - REDIS_URL=redis://redis:6379
+      # 이미지 렌더 동시성(미설정=min(4,코어수-1)). NAS CPU 에 맞춰 조정 가능.
+      - PBG_IMAGE_CONCURRENCY=${PBG_IMAGE_CONCURRENCY:-0}
+      # libuv 스레드풀 — sharp 가 fs 캐시 읽기를 굶기지 않도록 여유 확보.
+      - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-8}
       # DSM 사용자/그룹 — `id <username>` 로 확인. admin: 1026/100, 임의 사용자: 다름.
       - PUID=${PUID:-1026}
       - PGID=${PGID:-100}

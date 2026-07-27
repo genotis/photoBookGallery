@@ -174,8 +174,13 @@ export function Viewer({
   // 디스크 캐시를 우회. 같은 archive 동안은 같은 URL 이라 캐시 효율도 유지.
   // 다시 로드 시 reloadNonce 를 덧붙여 브라우저 캐시까지 우회.
   const pUrl = useCallback(
-    (id: number, i: number, size = 'preview') => {
-      const base = pageUrl(id, i, size, archive.contentHash);
+    (
+      id: number,
+      i: number,
+      size = 'preview',
+      priority?: 'high' | 'low',
+    ) => {
+      const base = pageUrl(id, i, size, archive.contentHash, priority);
       return reloadNonce ? `${base}&r=${reloadNonce}` : base;
     },
     [archive.contentHash, reloadNonce],
@@ -314,7 +319,7 @@ export function Viewer({
       if (ac.signal.aborted || t >= tasks.length) return;
       const { idx, size } = tasks[t++];
       try {
-        const res = await fetch(pUrl(archive.id, idx, size), {
+        const res = await fetch(pUrl(archive.id, idx, size, 'low'), {
           signal: ac.signal,
           credentials: 'include',
         });
@@ -902,8 +907,8 @@ export function Viewer({
                 // 이전 img 를 재사용하지 않고 새로 마운트(이전 이미지 잔상 방지).
                 key={`${archive.contentHash}-${reloadNonce}-${index}`}
                 className="viewer-img"
-                thumbSrc={pUrl(archive.id, index, 'thumb')}
-                fullSrc={pUrl(archive.id, index)}
+                thumbSrc={pUrl(archive.id, index, 'thumb', 'high')}
+                fullSrc={pUrl(archive.id, index, 'preview', 'high')}
                 alt={`page ${index + 1}`}
               />
               {selectMode && isSelected(index) && (
