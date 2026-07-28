@@ -889,6 +889,12 @@ select {
 .viewer-scroll-v .viewer-img {
   display: block;
 }
+/* 렌더 창 밖 자리표시 — 실제 <img> 없이 대략의 높이만 차지해 스크롤 구조/관찰자를
+   유지한다. 창에 들어오면 실제 이미지로 교체(overflow-anchor 로 위치 유지). */
+.viewer-scroll-v .viewer-frame.ph {
+  width: 100%;
+  min-height: 85vh;
+}
 /* 가로 연속 — 화면 높이에 맞춰 옆으로 흐름. 페이지 사이 간격 없음. */
 .viewer-scroll-h {
   flex: 1;
@@ -910,6 +916,11 @@ select {
   height: 100%;
   display: flex;
   align-items: center;
+}
+/* 렌더 창 밖 자리표시(가로) — 대략의 너비만 차지. 세로 대비 폭 기준. */
+.viewer-scroll-h .viewer-frame.ph {
+  flex: 0 0 auto;
+  min-width: 56vh;
 }
 .viewer-scroll-h .viewer-img {
   height: 100%;

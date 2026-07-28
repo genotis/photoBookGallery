@@ -638,6 +638,17 @@ export function Viewer({
 
   const isSelected = useMemo(() => (i: number) => selected.has(i), [selected]);
   const showDirToggle = view === 'single' || view === 'scroll-h';
+  // 스크롤 모드 렌더 창 — 현재 index 부근만 실제 <img> 를 마운트하고 나머지는
+  // 자리표시(placeholder)만 둔다. 페이지 많은 사진집을 스크롤 모드로 열면 <img>
+  // 가 전부(수백 개) 마운트돼 브라우저가 프리뷰 수십 MB 를 한꺼번에 내려받고,
+  // 사진집을 전환해도 <img> 요청은 (fetch 와 달리) 취소되지 않아 회선을 오래
+  // 점유 → 다음 사진집이 안 열리는 원인이었다. 창 밖은 요청을 만들지 않는다.
+  // (프리페치 fetch 가 앞뒤를 캐시에 데워두므로 창에 들어오면 즉시 뜬다.)
+  const SCROLL_WINDOW = 12;
+  const inScrollWindow = useCallback(
+    (i: number) => Math.abs(i - index) <= SCROLL_WINDOW,
+    [index],
+  );
   // 현재 페이지의 압축 내 이미지 파일명 (표시/복사용). 표시 목록 위치 = index.
   const pageName = entries.data?.[index]?.name ?? '';
 
@@ -976,15 +987,19 @@ export function Viewer({
               key={`${archive.contentHash}-${reloadNonce}-${i}`}
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
-              }`}
+              } ${inScrollWindow(i) ? '' : 'ph'}`}
               onClick={selectMode ? () => toggle(i) : onCenterClick}
             >
-              <img
-                className="viewer-img"
-                src={pUrl(archive.id, i)}
-                alt={`page ${i + 1}`}
-                loading="lazy"
-              />
+              {inScrollWindow(i) && (
+                <img
+                  className="viewer-img"
+                  // pr=low 로 프리페치(fetch)와 같은 URL → 프리페치가 데운 브라우저
+                  // 캐시를 그대로 재사용(창에 들어오면 네트워크 없이 즉시 표시).
+                  src={pUrl(archive.id, i, 'preview', 'low')}
+                  alt={`page ${i + 1}`}
+                  loading="lazy"
+                />
+              )}
               {selectMode && isSelected(i) && (
                 <span className="select-badge">삭제 예정</span>
               )}
@@ -1005,15 +1020,19 @@ export function Viewer({
               key={`${archive.contentHash}-${reloadNonce}-${i}`}
               className={`viewer-frame ${selectMode ? 'selectable' : ''} ${
                 isSelected(i) ? 'selected' : ''
-              }`}
+              } ${inScrollWindow(i) ? '' : 'ph'}`}
               onClick={selectMode ? () => toggle(i) : onCenterClick}
             >
-              <img
-                className="viewer-img"
-                src={pUrl(archive.id, i)}
-                alt={`page ${i + 1}`}
-                loading="lazy"
-              />
+              {inScrollWindow(i) && (
+                <img
+                  className="viewer-img"
+                  // pr=low 로 프리페치(fetch)와 같은 URL → 프리페치가 데운 브라우저
+                  // 캐시를 그대로 재사용(창에 들어오면 네트워크 없이 즉시 표시).
+                  src={pUrl(archive.id, i, 'preview', 'low')}
+                  alt={`page ${i + 1}`}
+                  loading="lazy"
+                />
+              )}
               {selectMode && isSelected(i) && (
                 <span className="select-badge">삭제 예정</span>
               )}
