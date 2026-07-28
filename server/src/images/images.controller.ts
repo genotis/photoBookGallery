@@ -61,6 +61,9 @@ export class ImagesController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    // 취소 신호는 어떤 await 보다도 먼저 붙인다 — 그러지 않으면 DB 조회/미들웨어가
+    // 도는 사이 클라이언트가 끊겨도 'close' 이벤트를 놓쳐 렌더가 취소 불가가 된다.
+    const signal = this.signalFor(req, res);
     const archive = await this.prisma.archive.findUnique({ where: { id } });
     if (!archive || !archive.coverEntry) {
       throw new NotFoundException('표지를 찾을 수 없습니다.');
@@ -75,7 +78,6 @@ export class ImagesController {
         coverRow = first;
       }
     }
-    const signal = this.signalFor(req, res);
     try {
       const img = await this.thumbnails.render(
         archive,
@@ -100,6 +102,10 @@ export class ImagesController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
+    // 취소 신호는 어떤 await 보다도 먼저 붙인다 — 그러지 않으면 DB 조회/미들웨어가
+    // 도는 사이 클라이언트가 끊겨도 'close' 이벤트를 놓쳐 렌더가 취소 불가가 된다.
+    // (뷰어를 닫거나 사진집을 넘길 때 다수 요청이 동시에 끊기며 이 창이 넓어진다.)
+    const signal = this.signalFor(req, res);
     const archive = await this.prisma.archive.findUnique({ where: { id } });
     if (!archive) {
       throw new NotFoundException('아카이브를 찾을 수 없습니다.');
@@ -114,7 +120,6 @@ export class ImagesController {
       : 'preview';
     // pr: high=0(보이는 페이지) / low=2(프리페치) / 그 외=1(일반)
     const priority = pr === 'high' ? 0 : pr === 'low' ? 2 : 1;
-    const signal = this.signalFor(req, res);
     try {
       const img = await this.thumbnails.render(
         archive,
@@ -138,6 +143,12 @@ export class ImagesController {
    */
   private signalFor(req: Request, res: Response): AbortSignal {
     const ac = new AbortController();
+    // 핸들러 진입 전(세션·바디 미들웨어 구간)에 이미 끊긴 연결이면 'close' 는
+    // 이벤트가 이미 지나가 다시 오지 않는다 → 소켓 상태를 직접 보고 즉시 취소.
+    if (req.destroyed || res.destroyed || req.aborted || !res.writable) {
+      ac.abort();
+      return ac.signal;
+    }
     const onClose = () => {
       if (!res.writableEnded) ac.abort();
     };

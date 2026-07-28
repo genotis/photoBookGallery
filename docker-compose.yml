@@ -35,7 +35,7 @@ services:
       # NAS 미디어 — 편집(재압축) 위해 RW. 실제 경로로 교체.
       - /volume4/Media:/media
       # 편집 시 원본 백업 보관 (원본 무손실 정책 — docs/04 참조)
-      - /volume1/docker/pbg/backups:/app/backups
+      - /volume4/Media/pbg/backups:/app/backups
       # SQLite DB — 백업 대상
       - /volume1/docker/pbg/data:/app/data
       # 썸네일 캐시 — 재생성 가능, 백업 불요
