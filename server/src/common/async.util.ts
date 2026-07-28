@@ -35,20 +35,50 @@ interface Waiter {
  * 높은(숫자가 작은) 작업을 먼저 깨운다. 같은 우선순위면 FIFO.
  * 대기 중 취소되면 슬롯을 잡지 않고 즉시 대기열에서 빠진다(핵심: 프리페치처럼
  * 아직 시작 안 한 작업은 사진집을 넘기는 순간 전부 드롭 → 보이는 페이지가 곧바로 실행).
+ *
+ * 고우선 슬롯 예약(reserved): 비-고우선(priority>=1) 작업은 최대 (max-reserved)
+ * 개까지만 동시 실행된다. 프리페치가 슬롯을 다 먹어도 항상 reserved 개의 자리가
+ * 보이는 페이지(priority 0)용으로 남아, 선점(진행 중 작업 kill) 없이도 현재
+ * 페이지가 즉시 실행된다. 예약분은 고우선 작업이 없을 때 놀지만(프리페치 처리량
+ * 약간 감소), 사용자가 실제로 기다리는 것은 보이는 페이지뿐이라 이 교환이 맞다.
  */
 export class PriorityScheduler {
   private active = 0;
+  private lowActive = 0; // priority>=1(비-고우선) 실행 수
   private seq = 0;
   private readonly waiters: Waiter[] = [];
+  private readonly reserved: number;
 
-  constructor(private readonly max: number) {}
+  /**
+   * @param max 총 동시 실행 상한.
+   * @param reserved 고우선(priority 0) 전용으로 남길 슬롯 수. [0, max-1] 로 클램프
+   *   (비-고우선이 최소 1슬롯은 쓸 수 있도록).
+   */
+  constructor(
+    private readonly max: number,
+    reserved = 0,
+  ) {
+    this.reserved = Math.max(0, Math.min(reserved, Math.max(0, max - 1)));
+  }
+
+  /** priority 우선순위의 작업을 지금 실행할 수 있는가(용량·예약 고려). */
+  private canGrant(priority: number): boolean {
+    if (this.active >= this.max) return false;
+    if (priority === 0) return true; // 고우선: 총량 한도 안에서 항상
+    return this.lowActive < this.max - this.reserved; // 비-고우선: 예약분 제외
+  }
+
+  private take(priority: number): void {
+    this.active += 1;
+    if (priority !== 0) this.lowActive += 1;
+  }
 
   /** priority: 낮을수록 먼저. 0=보이는 페이지, 1=일반, 2=프리페치. */
   async acquire(priority = 1, signal?: AbortSignal): Promise<() => void> {
     throwIfAborted(signal);
-    if (this.active < this.max) {
-      this.active += 1;
-      return this.makeRelease();
+    if (this.canGrant(priority)) {
+      this.take(priority);
+      return this.makeRelease(priority);
     }
     return new Promise<() => void>((resolve, reject) => {
       const waiter: Waiter = {
@@ -58,8 +88,8 @@ export class PriorityScheduler {
           if (waiter.onAbort && signal) {
             signal.removeEventListener('abort', waiter.onAbort);
           }
-          this.active += 1;
-          resolve(this.makeRelease());
+          this.take(priority);
+          resolve(this.makeRelease(priority));
         },
       };
       if (signal) {
@@ -74,28 +104,40 @@ export class PriorityScheduler {
     });
   }
 
-  private makeRelease(): () => void {
+  private makeRelease(priority: number): () => void {
     let released = false;
     return () => {
       if (released) return;
       released = true;
       this.active -= 1;
+      if (priority !== 0) this.lowActive -= 1;
       this.wakeNext();
     };
   }
 
+  /** 용량이 허락하는 한 우선순위 순으로 대기자를 깨운다(예약 규칙 준수). */
   private wakeNext(): void {
-    if (this.waiters.length === 0) return;
-    let best = 0;
-    for (let i = 1; i < this.waiters.length; i++) {
-      const w = this.waiters[i];
-      const b = this.waiters[best];
-      if (w.priority < b.priority || (w.priority === b.priority && w.seq < b.seq)) {
-        best = i;
+    for (;;) {
+      let best = -1;
+      for (let i = 0; i < this.waiters.length; i++) {
+        const w = this.waiters[i];
+        if (!this.canGrant(w.priority)) continue;
+        if (best < 0) {
+          best = i;
+          continue;
+        }
+        const b = this.waiters[best];
+        if (
+          w.priority < b.priority ||
+          (w.priority === b.priority && w.seq < b.seq)
+        ) {
+          best = i;
+        }
       }
+      if (best < 0) return;
+      const [w] = this.waiters.splice(best, 1);
+      w.grant(); // grant() 내부 take() 가 active/lowActive 를 증가 → 다음 루프에 반영
     }
-    const [w] = this.waiters.splice(best, 1);
-    w.grant();
   }
 }
 

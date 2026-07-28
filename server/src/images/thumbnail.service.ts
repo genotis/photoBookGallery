@@ -72,13 +72,18 @@ export class ThumbnailService {
       configured && configured > 0
         ? configured
         : Math.max(2, Math.min(4, cpus().length - 1));
-    this.scheduler = new PriorityScheduler(concurrency);
+    // 고우선(보이는 페이지) 전용 슬롯 예약. 스케줄러가 [0, concurrency-1] 로 클램프.
+    const reserveHigh = config.get<number>('imageReserveHigh') ?? 1;
+    this.scheduler = new PriorityScheduler(concurrency, reserveHigh);
 
     // sharp 인스턴스당 libvips 스레드를 1개로 제한 → 스레드 폭증 방지.
     // 병렬성은 위 스케줄러가 관리하고, libuv 스레드풀 여유를 fs 에 남긴다.
     sharp.concurrency(1);
 
-    this.logger.log(`이미지 렌더 동시성 = ${concurrency}, sharp concurrency = 1`);
+    this.logger.log(
+      `이미지 렌더 동시성 = ${concurrency}(고우선 예약 ${reserveHigh}), ` +
+        `sharp concurrency = 1`,
+    );
   }
 
   /**

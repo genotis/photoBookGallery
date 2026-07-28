@@ -1023,8 +1023,10 @@ export function Viewer({
         </div>
       )}
 
-      {/* 하단 썸네일 네비게이션 — 페이지 직접 이동. 상단바와 동기 자동 숨김. */}
-      {total > 1 && (
+      {/* 하단 썸네일 네비게이션(목차) — 페이지 직접 이동. 상단바와 동기 자동 숨김.
+          behavior.thumbnailStrip 이 꺼지면 렌더 자체를 안 해 썸네일 <img> 요청이
+          발생하지 않는다(단순 숨김 아님). */}
+      {behavior.thumbnailStrip && total > 1 && (
         <nav
           className={`viewer-thumbs ${barVisible || selectMode || repackPending ? '' : 'hidden'}`}
           onClick={(e) => e.stopPropagation()}

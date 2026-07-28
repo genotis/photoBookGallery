@@ -37,6 +37,16 @@ export function ViewerBehaviorPanel() {
       <label className="check small behavior-field">
         <input
           type="checkbox"
+          checked={b.thumbnailStrip}
+          onChange={(e) => update({ thumbnailStrip: e.target.checked })}
+        />
+        하단 썸네일 목차 표시 (끄면 네비를 아예 렌더하지 않아 목차용 썸네일
+        리사이즈 요청이 발생하지 않습니다 — 현재 페이지가 더 빨리 뜹니다)
+      </label>
+
+      <label className="check small behavior-field">
+        <input
+          type="checkbox"
           checked={b.tapNav}
           onChange={(e) => update({ tapNav: e.target.checked })}
         />
@@ -75,7 +85,7 @@ export function ViewerBehaviorPanel() {
         현재 적용된 값:{' '}
         <code>
           tapNav={String(b.tapNav)}, reveal={b.reveal}, slideshow=
-          {b.slideshowSec}s
+          {b.slideshowSec}s, 목차={b.thumbnailStrip ? 'on' : 'off'}
         </code>
         <button
           type="button"
@@ -86,6 +96,7 @@ export function ViewerBehaviorPanel() {
               tapNav: true,
               slideshowSec: 5,
               slideshowNextFile: false,
+              thumbnailStrip: true,
             })
           }
           title="기본값으로 되돌림"

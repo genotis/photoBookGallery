@@ -11,6 +11,12 @@ export interface ViewerBehavior {
   slideshowSec: number;
   /** 슬라이드쇼가 마지막 페이지에 닿으면 다음 사진집으로 자동 이어가기 */
   slideshowNextFile: boolean;
+  /**
+   * 하단 썸네일 네비(목차) 표시. 끄면 네비 자체를 렌더하지 않아 썸네일 <img> 가
+   * 생성되지 않는다 → 목차용 썸네일 리사이즈 요청이 아예 발생하지 않음(단순 숨김
+   * 아님). 목차가 페이지보다 늦게 뜨는 게 싫은 경우 완전히 끌 수 있다.
+   */
+  thumbnailStrip: boolean;
 }
 
 const STORAGE_KEY = 'pbg.viewerBehavior.v1';
@@ -20,6 +26,7 @@ const DEFAULT: ViewerBehavior = {
   tapNav: true,
   slideshowSec: 5,
   slideshowNextFile: false,
+  thumbnailStrip: true,
 };
 
 function load(): ViewerBehavior {
@@ -42,6 +49,10 @@ function load(): ViewerBehavior {
         typeof v.slideshowNextFile === 'boolean'
           ? v.slideshowNextFile
           : DEFAULT.slideshowNextFile,
+      thumbnailStrip:
+        typeof v.thumbnailStrip === 'boolean'
+          ? v.thumbnailStrip
+          : DEFAULT.thumbnailStrip,
     };
   } catch {
     return DEFAULT;
